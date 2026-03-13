@@ -306,4 +306,4 @@ See [LICENSE](LICENSE) for details.
 ## Acknowledgements
 
 - [IntelliJ Platform Plugin SDK](https://plugins.jetbrains.com/docs/intellij/welcome.html)
-- [Dynatrace Android Instrumentation Documentation](https://www.dynatrace.com/support/help/technology-support/real-user-monitoring/mobile-and-custom-applications/mobile-app-instrumentation/android/)
+- [Dynatrace Android Instrumentation Documentation](https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications/instrument-android-app/instrumentation-via-plugin)
