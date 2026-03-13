@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40">
+  <!-- Background circle -->
+  <circle cx="20" cy="20" r="20" fill="#1496ff"/>
+  <!-- Letter D for Dynatrace -->
+  <text x="20" y="28" font-family="Arial, sans-serif" font-size="24" font-weight="bold"
+        text-anchor="middle" fill="white">D</text>
+  <!-- Small wizard wand accent -->
+  <line x1="28" y1="8" x2="34" y2="14" stroke="white" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="28" cy="8" r="2" fill="#f5f5f5"/>
+</svg>
