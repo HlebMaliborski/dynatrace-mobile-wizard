@@ -1,6 +1,6 @@
 # Dynatrace Wizard
 
-An **Android Studio / IntelliJ IDEA** plugin that simplifies [Dynatrace Mobile SDK](https://www.dynatrace.com/support/help/technology-support/real-user-monitoring/mobile-and-custom-applications/mobile-app-instrumentation/android/android-instrumentation-setup) configuration for Android projects through a guided wizard dialog.
+An **Android Studio / IntelliJ IDEA** plugin that simplifies [Dynatrace Mobile SDK](https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications/instrument-android-app/instrumentation-via-plugin) configuration for Android projects through a guided wizard dialog.
 
 ---
 
