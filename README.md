@@ -1,20 +1,44 @@
 # Dynatrace Wizard
 
-An **Android Studio / IntelliJ IDEA** plugin that simplifies [Dynatrace Mobile SDK](https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications/instrument-android-app/instrumentation-via-plugin) configuration for Android projects through a guided wizard dialog.
+An **Android Studio / IntelliJ IDEA** plugin that
+simplifies [Dynatrace Mobile SDK](https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications/instrument-android-app/instrumentation-via-plugin)
+configuration for Android projects through a guided wizard dialog.
 
 ---
+
+### Wizard Steps
+
+![Welcome tab](docs/screenshots/wizard/01-welcome.png)
+
+![Modules tab](docs/screenshots/wizard/02-modules.png)
+
+![Environment tab](docs/screenshots/wizard/03-environment.png)
+
+![Technologies tab](docs/screenshots/wizard/04-technologies.png)
+
+![Features tab](docs/screenshots/wizard/05-features.png)
+
+![Summary tab](docs/screenshots/wizard/06-summary.png)
 
 ## Features
 
 - 🧙 **6-step wizard UI** — guided tab-based dialog built on IntelliJ's `DialogWrapper`
-- 🔍 **Auto project detection** — detects Android projects, locates `build.gradle(.kts)` files, and classifies every module automatically
-- 🏗️ **Multi-module support** — handles single-app, feature-module, and multi-app projects with appropriate instrumentation strategies per setup flow
-- 🔀 **Two plugin approaches** — Plugin DSL (`plugins {}` block) and buildscript classpath (`buildscript { dependencies { classpath } }`) with seamless migration between them
-- 🔑 **Per-module credentials** — for multi-app projects using the per-module approach, each app module can have its own Application ID and Beacon URL
-- 🔄 **Update / re-run mode** — when Dynatrace is already configured the wizard pre-fills all fields from the existing setup, including per-module credentials
-- 🔬 **Technology compatibility scan** — detects 20+ libraries and frameworks in the project and reports Dynatrace compatibility against known version ranges
-- ✏️ **Gradle file modification** — adds the Dynatrace Gradle plugin and `dynatrace {}` configuration block with correct placement and deduplication
-- 🧹 **Approach migration** — switches cleanly between Plugin DSL and per-module by removing stale coordinator declarations, classpath entries, and orphaned `dynatrace {}` blocks
+- 🔍 **Auto project detection** — detects Android projects, locates `build.gradle(.kts)` files, and classifies every
+  module automatically
+- 🏗️ **Multi-module support** — handles single-app, feature-module, and multi-app projects with appropriate
+  instrumentation strategies per setup flow
+- 🔀 **Two plugin approaches** — Plugin DSL (`plugins {}` block) and buildscript classpath (
+  `buildscript { dependencies { classpath } }`) with seamless migration between them
+- 🔑 **Per-module credentials** — for multi-app projects using the per-module approach, each app module can have its own
+  Application ID and Beacon URL
+- 🔄 **Update / re-run mode** — when Dynatrace is already configured the wizard pre-fills all fields from the existing
+  setup, including per-module credentials
+- 🔬 **Technology compatibility scan** — detects 20+ libraries and frameworks in the project and reports Dynatrace
+  compatibility against known version ranges
+- ✏️ **Gradle file modification** — adds the Dynatrace Gradle plugin and `dynatrace {}` configuration block with correct
+  placement and deduplication
+- 🧹 **Approach migration** — switches cleanly between Plugin DSL and per-module by removing stale coordinator
+  declarations, classpath entries, and orphaned `dynatrace {}` blocks
 - 🔀 **Groovy & Kotlin DSL support** — handles both `build.gradle` and `build.gradle.kts`
 - ✅ **Input validation** — real-time validation for Application ID and Beacon URL (with per-module field support)
 - 📋 **Change preview** — the Summary tab shows exactly what will be written before applying
@@ -25,14 +49,14 @@ An **Android Studio / IntelliJ IDEA** plugin that simplifies [Dynatrace Mobile S
 
 ## Wizard Steps
 
-| # | Tab | Description |
-|---|-----|-------------|
-| 1 | **Welcome** | Detects the Android project; shows module list, plugin approach, setup flow, and mavenCentral() status |
-| 2 | **Environment** | Enter Dynatrace **Application ID** and **Beacon URL**; for multi-app projects a toggle switches to per-module credential entry |
-| 3 | **Modules** | Select which app modules to instrument; choose Plugin DSL vs per-module approach for multi-app projects; opt library modules into the OneAgent SDK dependency |
-| 4 | **Technologies** | Scans the project for 20+ libraries and shows Dynatrace compatibility status with detected version numbers |
-| 5 | **Features** | Fine-grained instrumentation toggles — monitoring sections, privacy, exclusions, build variant, and advanced agent behavior |
-| 6 | **Summary** | Full change preview (file paths + generated blocks) before writing anything |
+| # | Tab              | Description                                                                                                                                                   |
+|---|------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1 | **Welcome**      | Detects the Android project; shows module list, plugin approach, setup flow, and mavenCentral() status                                                        |
+| 2 | **Environment**  | Enter Dynatrace **Application ID** and **Beacon URL**; for multi-app projects a toggle switches to per-module credential entry                                |
+| 3 | **Modules**      | Select which app modules to instrument; choose Plugin DSL vs per-module approach for multi-app projects; opt library modules into the OneAgent SDK dependency |
+| 4 | **Technologies** | Scans the project for 20+ libraries and shows Dynatrace compatibility status with detected version numbers                                                    |
+| 5 | **Features**     | Fine-grained instrumentation toggles — monitoring sections, privacy, exclusions, build variant, and advanced agent behavior                                   |
+| 6 | **Summary**      | Full change preview (file paths + generated blocks) before writing anything                                                                                   |
 
 ---
 
@@ -40,64 +64,72 @@ An **Android Studio / IntelliJ IDEA** plugin that simplifies [Dynatrace Mobile S
 
 The wizard detects the project structure and routes configuration accordingly:
 
-| Flow | When detected | Strategy |
-|------|--------------|----------|
-| **Single app** | One `com.android.application` module | Plugin DSL or classpath at root; `dynatrace {}` block in root (Plugin DSL) or app module (classpath) |
-| **Feature modules** | Base app + dynamic-feature modules | Same as single app; feature and library modules are instrumented automatically — no per-module changes needed |
-| **Multi-app** | Two or more `com.android.application` modules | **Plugin DSL**: coordinator at root instruments all app modules automatically. **Per-module**: classpath at root + `com.dynatrace.instrumentation.module` in each app module |
-| **Single build file** | Root file also acts as the app module | All changes applied to the single root build file |
-| **Unknown** | Structure unclear | Best-effort single-app treatment |
+| Flow                  | When detected                                 | Strategy                                                                                                                                                                     |
+|-----------------------|-----------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Single app**        | One `com.android.application` module          | Plugin DSL or classpath at root; `dynatrace {}` block in root (Plugin DSL) or app module (classpath)                                                                         |
+| **Feature modules**   | Base app + dynamic-feature modules            | Same as single app; feature and library modules are instrumented automatically — no per-module changes needed                                                                |
+| **Multi-app**         | Two or more `com.android.application` modules | **Plugin DSL**: coordinator at root instruments all app modules automatically. **Per-module**: classpath at root + `com.dynatrace.instrumentation.module` in each app module |
+| **Single build file** | Root file also acts as the app module         | All changes applied to the single root build file                                                                                                                            |
+| **Unknown**           | Structure unclear                             | Best-effort single-app treatment                                                                                                                                             |
 
 ### Plugin Approach Migration
 
 When switching approaches on a re-run:
 
-- **Per-module → Plugin DSL**: removes the classpath entry from `buildscript {}`, removes `dynatrace {}` blocks from each app module, and adds the coordinator plugin + root `dynatrace {}` block.
-- **Plugin DSL → Per-module**: removes the coordinator plugin declaration and root `dynatrace {}` block, adds the classpath entry to `buildscript {}`, and adds `com.dynatrace.instrumentation.module` + `dynatrace {}` to each app module.
+- **Per-module → Plugin DSL**: removes the classpath entry from `buildscript {}`, removes `dynatrace {}` blocks from
+  each app module, and adds the coordinator plugin + root `dynatrace {}` block.
+- **Plugin DSL → Per-module**: removes the coordinator plugin declaration and root `dynatrace {}` block, adds the
+  classpath entry to `buildscript {}`, and adds `com.dynatrace.instrumentation.module` + `dynatrace {}` to each app
+  module.
 
-> **Mixed state detected**: when both a `plugins {}` block and a `buildscript { classpath }` entry are found, the Welcome tab highlights this with a warning and describes what the wizard will clean up.
+> **Mixed state detected**: when both a `plugins {}` block and a `buildscript { classpath }` entry are found, the
+> Welcome tab highlights this with a warning and describes what the wizard will clean up.
 
 ---
 
 ## Environment Tab — Per-Module Credentials
 
-For **multi-app + per-module** projects, check **"Configure each app module individually"** to enter a separate Application ID and Beacon URL for each app module. When unchecked (default), all modules share the same credentials.
+For **multi-app + per-module** projects, check **"Configure each app module individually"** to enter a separate
+Application ID and Beacon URL for each app module. When unchecked (default), all modules share the same credentials.
 
-On re-open, per-module credentials are read back from each module's build file and pre-filled automatically, and the toggle switches to individual mode.
+On re-open, per-module credentials are read back from each module's build file and pre-filled automatically, and the
+toggle switches to individual mode.
 
 ---
 
 ## Features Tab
 
-| Section | Options |
-|---------|---------|
-| **Global** | Plugin enabled (global kill-switch for all instrumentation) |
-| **Instrumentation** | Auto-instrumentation (bytecode transform), auto-start on app launch |
-| **Monitoring** | User actions, web requests (OkHttp / HttpURLConnection), lifecycle, crash reporting |
-| **Compose & Behavioral** | Jetpack Compose instrumentation, rage tap detection |
-| **Privacy** | User opt-in mode (GDPR), name privacy masking, location monitoring, hybrid WebView monitoring |
-| **Advanced** | Client-side ActiveGate load balancing, New RUM Experience (Grail), strict mode |
-| **Exclusions** | Exclude packages / classes / methods from bytecode transformation (comma-separated) |
-| **Build variant** | Restrict instrumentation to a specific Gradle build variant (regex) |
+| Section                  | Options                                                                                       |
+|--------------------------|-----------------------------------------------------------------------------------------------|
+| **Global**               | Plugin enabled (global kill-switch for all instrumentation)                                   |
+| **Instrumentation**      | Auto-instrumentation (bytecode transform), auto-start on app launch                           |
+| **Monitoring**           | User actions, web requests (OkHttp / HttpURLConnection), lifecycle, crash reporting           |
+| **Compose & Behavioral** | Jetpack Compose instrumentation, rage tap detection                                           |
+| **Privacy**              | User opt-in mode (GDPR), name privacy masking, location monitoring, hybrid WebView monitoring |
+| **Advanced**             | Client-side ActiveGate load balancing, New RUM Experience (Grail), strict mode                |
+| **Exclusions**           | Exclude packages / classes / methods from bytecode transformation (comma-separated)           |
+| **Build variant**        | Restrict instrumentation to a specific Gradle build variant (regex)                           |
 
 ---
 
 ## Technology Compatibility
 
-The **Technologies tab** scans all Gradle build files, `libs.versions.toml`, and `gradle-wrapper.properties` and reports compatibility status for:
+The **Technologies tab** scans all Gradle build files, `libs.versions.toml`, and `gradle-wrapper.properties` and reports
+compatibility status for:
 
-| Category | Technologies |
-|----------|-------------|
-| Build & Toolchain | Android Gradle Plugin (8.0+), Kotlin (1.6+), Gradle Wrapper, Android SDK API level |
-| HTTP & Networking | HttpURLConnection, OkHttp (v3+), Retrofit 2, Apache HTTP Client |
-| Jetpack & UI | Jetpack Compose (1.4–1.10), Android Views / Activities |
-| Async | Kotlin Coroutines (1.10.2–2.1) |
-| Crash & Exceptions | Java / Kotlin uncaught exceptions |
-| Hybrid | Android WebView |
-| Behavioral | Rage tap detection |
-| Privacy | Opt-in mode, name privacy masking |
+| Category           | Technologies                                                                       |
+|--------------------|------------------------------------------------------------------------------------|
+| Build & Toolchain  | Android Gradle Plugin (8.0+), Kotlin (1.6+), Gradle Wrapper, Android SDK API level |
+| HTTP & Networking  | HttpURLConnection, OkHttp (v3+), Retrofit 2, Apache HTTP Client                    |
+| Jetpack & UI       | Jetpack Compose (1.4–1.10), Android Views / Activities                             |
+| Async              | Kotlin Coroutines (1.10.2–2.1)                                                     |
+| Crash & Exceptions | Java / Kotlin uncaught exceptions                                                  |
+| Hybrid             | Android WebView                                                                    |
+| Behavioral         | Rage tap detection                                                                 |
+| Privacy            | Opt-in mode, name privacy masking                                                  |
 
 Each entry shows one of:
+
 - ✅ **Compatible** — detected and within the supported version range
 - ❌ **Unsupported version** — detected but outside the supported range
 - 💡 **Not in project** — library not found; no action required
@@ -107,14 +139,15 @@ Each entry shows one of:
 
 ## Compatibility
 
-| IDE | Minimum Version |
-|-----|----------------|
-| IntelliJ IDEA (Community / Ultimate) | 2024.1 |
-| Android Studio | 2025.1 (Meerkat) |
+| IDE                                  | Minimum Version  |
+|--------------------------------------|------------------|
+| IntelliJ IDEA (Community / Ultimate) | 2024.1           |
+| Android Studio                       | 2025.1 (Meerkat) |
 
 - Uses the modern `guessProjectDir()` API — the deprecated `project.baseDir` is not used.
 - Supports **Kotlin DSL** (`build.gradle.kts`) and **Groovy DSL** (`build.gradle`).
-- Supports **Version Catalogs** — recognises `alias(libs.plugins.android.application)` and other catalog-based plugin declarations.
+- Supports **Version Catalogs** — recognises `alias(libs.plugins.android.application)` and other catalog-based plugin
+  declarations.
 
 ---
 
@@ -122,15 +155,15 @@ Each entry shows one of:
 
 The wizard scans subdirectory build files for any of the following patterns:
 
-| Pattern | Description |
-|---------|-------------|
-| `com.android.application` | Standard Android application plugin |
-| `com.android.library` | Android library module |
-| `com.android.dynamic-feature` | Dynamic feature module |
-| `com.android.test` | Android test module |
-| `android { }` block | Gradle `android` extension |
-| `androidApplication()` | Version Catalog Kotlin DSL alias |
-| `android.application` / `android.library` | Dot-notation catalog aliases |
+| Pattern                                   | Description                         |
+|-------------------------------------------|-------------------------------------|
+| `com.android.application`                 | Standard Android application plugin |
+| `com.android.library`                     | Android library module              |
+| `com.android.dynamic-feature`             | Dynamic feature module              |
+| `com.android.test`                        | Android test module                 |
+| `android { }` block                       | Gradle `android` extension          |
+| `androidApplication()`                    | Version Catalog Kotlin DSL alias    |
+| `android.application` / `android.library` | Dot-notation catalog aliases        |
 
 ---
 
@@ -155,15 +188,16 @@ See [Build & Run from Source](#build--run-from-source) below.
 2. Go to **Tools → Dynatrace Wizard…**  
    _(or right-click in the Project view / Editor → Dynatrace Wizard…)_
 3. Follow the wizard steps:
-   - **Welcome** — verify project and module detection
-   - **Environment** — enter Application ID + Beacon URL (optionally per-module for multi-app)
-   - **Modules** — select modules and instrumentation approach
-   - **Technologies** — review compatibility of detected libraries
-   - **Features** — configure instrumentation options
-   - **Summary** — review all changes and click **Finish**
+    - **Welcome** — verify project and module detection
+    - **Environment** — enter Application ID + Beacon URL (optionally per-module for multi-app)
+    - **Modules** — select modules and instrumentation approach
+    - **Technologies** — review compatibility of detected libraries
+    - **Features** — configure instrumentation options
+    - **Summary** — review all changes and click **Finish**
 4. **Sync** your Gradle project to activate the Dynatrace agent
 
-> If Dynatrace is already configured the wizard detects it, asks whether to update the existing setup, and pre-fills all fields — including per-module credentials — from the current build files.
+> If Dynatrace is already configured the wizard detects it, asks whether to update the existing setup, and pre-fills all
+> fields — including per-module credentials — from the current build files.
 
 ### Where to Find Your Dynatrace Credentials
 
@@ -201,6 +235,7 @@ cd dynatrace_wizard
 The built plugin `.zip` is placed in `build/distributions/`.
 
 To install manually:
+
 1. **Settings → Plugins → ⚙ → Install Plugin from Disk…**
 2. Select the generated `.zip` file
 
@@ -255,7 +290,8 @@ Contributions are welcome! Please:
 - Kotlin with standard JetBrains conventions
 - All IDE interactions use IntelliJ Platform APIs (`VirtualFile`, `WriteCommandAction`, `NotificationGroupManager`)
 - New wizard steps: add a `*Step.kt` in `wizard/`, implement `createPanel()`, register in `DynatraceWizardDialog`
-- New config options: add a field to `DynatraceConfig`, expose from the relevant step, update `buildConfig()`, and add codegen in both `buildDynatraceBlockKts()` and `buildDynatraceBlockGroovy()`
+- New config options: add a field to `DynatraceConfig`, expose from the relevant step, update `buildConfig()`, and add
+  codegen in both `buildDynatraceBlockKts()` and `buildDynatraceBlockGroovy()`
 - Tests live under `src/test/` and use JUnit 4
 
 ---
