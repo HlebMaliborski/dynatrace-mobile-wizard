@@ -36,6 +36,8 @@ data class DynatraceConfig(
     // --- agent behavior (advanced) ---
     val agentBehaviorLoadBalancing: Boolean = false,  // agentBehavior { startupLoadBalancing true }
     val agentBehaviorGrail: Boolean = false,          // agentBehavior { startupWithGrailEnabled true }
+    // --- session replay ---
+    val sessionReplayEnabled: Boolean = false,        // sessionReplay.enabled(true)
     // --- exclusions ---
     val excludePackages: String = "",   // comma-separated package names
     val excludeClasses: String = "",    // comma-separated fully-qualified class names

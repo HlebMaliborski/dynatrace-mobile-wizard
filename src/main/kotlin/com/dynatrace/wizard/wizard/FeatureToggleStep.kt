@@ -48,6 +48,9 @@ class FeatureToggleStep {
     val agentBehaviorGrailCheckBox = JBCheckBox("Enable New RUM Experience on first start", false)
     val strictModeCheckBox = JBCheckBox("Strict mode (fail build if variant has no config)", false)
 
+    // --- Session Replay ---
+    val sessionReplayCheckBox = JBCheckBox("Session Replay (record screen content)", false)
+
     // --- Exclusions ---
     val excludePackagesField = JBTextField()
     val excludeClassesField = JBTextField()
@@ -137,6 +140,12 @@ class FeatureToggleStep {
             .addComponent(checkboxItem(strictModeCheckBox,
                 "When enabled the build fails if a variant has no matching Dynatrace config — " +
                 "forces full coverage."))
+            // ── Session Replay ────────────────────────────────────────────────
+            .addComponent(TitledSeparator("Session Replay"))
+            .addComponent(checkboxItem(sessionReplayCheckBox,
+                "Records screen content and user interactions for visual session playback. " +
+                "Requires a Session Replay license. Emits sessionReplay.enabled(true) — " +
+                "available from plugin 8.281+."))
             // ── Exclusions ────────────────────────────────────────────────────
             .addComponent(TitledSeparator("Exclusions (comma-separated)"))
             .addLabeledComponent(JBLabel("Exclude packages:"),
@@ -219,6 +228,7 @@ class FeatureToggleStep {
     fun isAgentBehaviorLoadBalancing(): Boolean = agentBehaviorLbCheckBox.isSelected
     fun isAgentBehaviorGrail(): Boolean = agentBehaviorGrailCheckBox.isSelected
     fun isStrictMode(): Boolean = strictModeCheckBox.isSelected
+    fun isSessionReplayEnabled(): Boolean = sessionReplayCheckBox.isSelected
     fun getExcludePackages(): String = excludePackagesField.text.trim()
     fun getExcludeClasses(): String = excludeClassesField.text.trim()
     fun getExcludeMethods(): String = excludeMethodsField.text.trim()
@@ -242,6 +252,7 @@ class FeatureToggleStep {
         agentBehaviorLbCheckBox.isSelected      = config.agentBehaviorLoadBalancing
         agentBehaviorGrailCheckBox.isSelected   = config.agentBehaviorGrail
         strictModeCheckBox.isSelected           = config.strictMode
+        sessionReplayCheckBox.isSelected        = config.sessionReplayEnabled
         excludePackagesField.text               = config.excludePackages
         excludeClassesField.text                = config.excludeClasses
         excludeMethodsField.text                = config.excludeMethods

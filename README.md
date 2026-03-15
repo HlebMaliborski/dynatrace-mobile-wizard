@@ -33,6 +33,9 @@ configuration for Android projects through a guided wizard dialog.
   Application ID and Beacon URL
 - 🔄 **Update / re-run mode** — when Dynatrace is already configured the wizard pre-fills all fields from the existing
   setup, including per-module credentials
+- 🧩 **Legacy mixed Kotlin DSL support** — supports projects using both `plugins {}` and `buildscript { classpath }`,
+  and emits `apply(plugin = "com.dynatrace.instrumentation")` +
+  `configure<com.dynatrace.tools.android.dsl.DynatraceExtension> {}` when needed
 - 🔬 **Technology compatibility scan** — detects 20+ libraries and frameworks in the project and reports Dynatrace
   compatibility against known version ranges
 - ✏️ **Gradle file modification** — adds the Dynatrace Gradle plugin and `dynatrace {}` configuration block with correct
@@ -83,7 +86,9 @@ When switching approaches on a re-run:
   module.
 
 > **Mixed state detected**: when both a `plugins {}` block and a `buildscript { classpath }` entry are found, the
-> Welcome tab highlights this with a warning and describes what the wizard will clean up.
+> wizard keeps the classpath approach and configures Kotlin DSL roots using
+> `apply(plugin = "com.dynatrace.instrumentation")` +
+> `configure<com.dynatrace.tools.android.dsl.DynatraceExtension> {}`.
 
 ---
 
@@ -104,7 +109,7 @@ toggle switches to individual mode.
 | **Global**               | Plugin enabled (global kill-switch for all instrumentation)                                   |
 | **Instrumentation**      | Auto-instrumentation (bytecode transform), auto-start on app launch                           |
 | **Monitoring**           | User actions, web requests (OkHttp / HttpURLConnection), lifecycle, crash reporting           |
-| **Compose & Behavioral** | Jetpack Compose instrumentation, rage tap detection                                           |
+| **Compose & Behavioral** | Jetpack Compose instrumentation, rage tap detection, Session Replay                           |
 | **Privacy**              | User opt-in mode (GDPR), name privacy masking, location monitoring, hybrid WebView monitoring |
 | **Advanced**             | Client-side ActiveGate load balancing, New RUM Experience (Grail), strict mode                |
 | **Exclusions**           | Exclude packages / classes / methods from bytecode transformation (comma-separated)           |
