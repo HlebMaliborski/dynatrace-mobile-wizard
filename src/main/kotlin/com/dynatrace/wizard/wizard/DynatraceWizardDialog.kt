@@ -1,10 +1,12 @@
 package com.dynatrace.wizard.wizard
 
 import com.dynatrace.wizard.model.DynatraceConfig
+import com.dynatrace.wizard.model.SkillsExportConfig
 import com.dynatrace.wizard.service.GradleModificationService
 import com.dynatrace.wizard.service.ProjectDetectionService
 import com.dynatrace.wizard.service.ProjectDetectionService.ModuleType
 import com.dynatrace.wizard.service.ProjectDetectionService.SetupFlow
+import com.dynatrace.wizard.service.SkillsExportService
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.project.Project
@@ -20,14 +22,15 @@ import javax.swing.JPanel
 import javax.swing.ScrollPaneConstants
 
 /**
- * Main wizard dialog — 5-step tab-based wizard.
+ * Main wizard dialog — 7-step tab-based wizard.
  *
  *  Tab 0  Welcome         — project detection overview
  *  Tab 1  Modules         — per-module selection (checkboxes for MULTI_APP)
  *  Tab 2  Environment     — Application ID + Beacon URL
  *  Tab 3  Technologies    — supported technologies
  *  Tab 4  Features        — feature toggles
- *  Tab 5  Summary         — change preview + Finish
+ *  Tab 6  Skills          — AI skill export configuration
+ *  Tab 7  Summary         — change preview + Finish
  */
 class DynatraceWizardDialog(
     private val project: Project,
@@ -40,10 +43,12 @@ class DynatraceWizardDialog(
     private val moduleSelectionStep = ModuleSelectionStep()
     private val supportedTechStep   = SupportedTechnologiesStep()
     private val featureStep         = FeatureToggleStep()
+    private val skillsStep          = SkillsStep()
     private val summaryStep         = SummaryStep()
 
     private val tabbedPane   = JBTabbedPane()
     private val gradleService = GradleModificationService(project)
+    private val skillsExportService = SkillsExportService(project)
 
     private lateinit var projectInfo: ProjectDetectionService.ProjectInfo
     private lateinit var prevAction:  DialogWrapperAction
@@ -52,7 +57,8 @@ class DynatraceWizardDialog(
     // Tab index constants
     private val TAB_MODULES      = 1
     private val TAB_ENVIRONMENT  = 2
-    private val TAB_SUMMARY      = 5
+    private val TAB_SKILLS       = 5
+    private val TAB_SUMMARY      = 6
 
     init {
         title = if (existingConfig != null) "Dynatrace Wizard — Update Configuration" else "Dynatrace Wizard"
@@ -81,6 +87,7 @@ class DynatraceWizardDialog(
 
             featureStep.prefill(it)
         }
+        skillsStep.prefill(SkillsExportConfig())
         updateNavButtons()
     }
 
@@ -91,6 +98,7 @@ class DynatraceWizardDialog(
         val modulePanel       = moduleSelectionStep.createPanel(projectInfo)
         val techPanel         = supportedTechStep.createPanel(projectInfo)
         val featurePanel      = featureStep.createPanel()
+        val skillsPanel       = skillsStep.createPanel()
         val summaryPanel      = summaryStep.createPanel()
 
         tabbedPane.addTab("1. Welcome",      scrollable(welcomePanel))
@@ -98,7 +106,8 @@ class DynatraceWizardDialog(
         tabbedPane.addTab("3. Environment",  scrollable(environmentPanel))
         tabbedPane.addTab("4. Technologies", scrollable(techPanel))
         tabbedPane.addTab("5. Features",     scrollable(featurePanel))
-        tabbedPane.addTab("6. Summary",      scrollable(summaryPanel))
+        tabbedPane.addTab("6. Skills",       scrollable(skillsPanel))
+        tabbedPane.addTab("7. Summary",      scrollable(summaryPanel))
 
         // Wire approach-change listener so the per-module toggle reacts immediately
         // when the user flips the Plugin DSL / per-module radio on the Modules tab.
@@ -126,12 +135,25 @@ class DynatraceWizardDialog(
             if (tabbedPane.selectedIndex == TAB_SUMMARY) {
                 val effectiveInfo = getEffectiveProjectInfo()
                 val deselectedModules = computeDeselectedModules(effectiveInfo)
+                val config = buildConfig()
+                val skillsConfig = buildSkillsConfig()
+                val skillPreview = if (skillsConfig.exportSkillFile) {
+                    SkillsExportService().generateSkillsMarkdown(
+                        effectiveInfo,
+                        config,
+                        skillsConfig,
+                        moduleSelectionStep.getLibraryModulesForSdk(),
+                        deselectedModules
+                    )
+                } else null
                 summaryStep.updateSummary(
                     effectiveInfo,
-                    buildConfig(),
+                    config,
+                    skillsConfig,
                     gradleService,
                     moduleSelectionStep.getLibraryModulesForSdk(),
-                    deselectedModules
+                    deselectedModules,
+                    skillPreview
                 )
             }
             // Re-evaluate per-module toggle visibility and visible module list every
@@ -221,6 +243,15 @@ class DynatraceWizardDialog(
                     false
                 } else true
             }
+            TAB_SKILLS -> {
+                val validationMessage = skillsStep.getSkillFileValidationMessage()
+                if (validationMessage != null) {
+                    val target = skillsStep.getSkillFileValidationComponent()
+                    setErrorText(validationMessage, target)
+                    target.requestFocusInWindow()
+                    false
+                } else true
+            }
             else -> true
         }
     }
@@ -245,6 +276,13 @@ class DynatraceWizardDialog(
             val target = moduleSelectionStep.getValidationComponent()
             setErrorText("Please select at least one application module to instrument.", target)
             target?.requestFocusInWindow()
+            return
+        }
+        skillsStep.getSkillFileValidationMessage()?.let { validationMessage ->
+            tabbedPane.selectedIndex = TAB_SKILLS
+            val target = skillsStep.getSkillFileValidationComponent()
+            setErrorText(validationMessage, target)
+            target.requestFocusInWindow()
             return
         }
         setErrorText(null)
@@ -326,9 +364,13 @@ class DynatraceWizardDialog(
         strictMode             = featureStep.isStrictMode()
     )
 
+    private fun buildSkillsConfig(): SkillsExportConfig = skillsStep.buildConfig()
+
     private fun applyChanges(config: DynatraceConfig) {
         try {
             val effective = getEffectiveProjectInfo()
+            val skillsConfig = buildSkillsConfig()
+            var exportedSkillPath: String? = null
 
             effective.settingsFile?.let { gradleService.ensureMavenCentral(it, effective.isKotlinDsl) }
                 ?: effective.projectBuildFile?.let { gradleService.ensureMavenCentral(it, effective.isKotlinDsl) }
@@ -358,8 +400,19 @@ class DynatraceWizardDialog(
                 }
             }
 
+            if (skillsConfig.exportSkillFile) {
+                exportedSkillPath = skillsExportService.writeSkillsFile(
+                    effective,
+                    config,
+                    skillsConfig,
+                    sdkModules,
+                    computeDeselectedModules(effective)
+                )
+            }
+
             showNotification(
                 "Dynatrace configuration applied successfully!\n" +
+                (exportedSkillPath?.let { "AI skill file exported to: $it\n" } ?: "") +
                 "Sync your Gradle project to activate the changes.",
                 NotificationType.INFORMATION
             )

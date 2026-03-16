@@ -22,7 +22,7 @@ configuration for Android projects through a guided wizard dialog.
 
 ## Features
 
-- 🧙 **6-step wizard UI** — guided tab-based dialog built on IntelliJ's `DialogWrapper`
+- 🧙 **7-step wizard UI** — guided tab-based dialog built on IntelliJ's `DialogWrapper`
 - 🔍 **Auto project detection** — detects Android projects, locates `build.gradle(.kts)` files, and classifies every
   module automatically
 - 🏗️ **Multi-module support** — handles single-app, feature-module, and multi-app projects with appropriate
@@ -45,6 +45,7 @@ configuration for Android projects through a guided wizard dialog.
 - 🔀 **Groovy & Kotlin DSL support** — handles both `build.gradle` and `build.gradle.kts`
 - ✅ **Input validation** — real-time validation for Application ID and Beacon URL (with per-module field support)
 - 📋 **Change preview** — the Summary tab shows exactly what will be written before applying
+- 🤖 **AI skill export** — optional Markdown `skills.md` export from a dedicated Skills tab for sharing reusable setup skills with AI agents
 - 🔔 **IDE notifications** — success and error notifications via IntelliJ's notification system
 - ↩️ **Undo support** — all Gradle file writes use `WriteCommandAction` and can be undone with Ctrl/Cmd+Z
 
@@ -55,11 +56,12 @@ configuration for Android projects through a guided wizard dialog.
 | # | Tab              | Description                                                                                                                                                   |
 |---|------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | 1 | **Welcome**      | Detects the Android project; shows module list, plugin approach, setup flow, and mavenCentral() status                                                        |
-| 2 | **Environment**  | Enter Dynatrace **Application ID** and **Beacon URL**; for multi-app projects a toggle switches to per-module credential entry                                |
-| 3 | **Modules**      | Select which app modules to instrument; choose Plugin DSL vs per-module approach for multi-app projects; opt library modules into the OneAgent SDK dependency |
+| 2 | **Modules**      | Select which app modules to instrument; choose Plugin DSL vs per-module approach for multi-app projects; opt library modules into the OneAgent SDK dependency |
+| 3 | **Environment**  | Enter Dynatrace **Application ID** and **Beacon URL**; for multi-app projects a toggle switches to per-module credential entry                                |
 | 4 | **Technologies** | Scans the project for 20+ libraries and shows Dynatrace compatibility status with detected version numbers                                                    |
 | 5 | **Features**     | Fine-grained instrumentation toggles — monitoring sections, privacy, exclusions, build variant, and advanced agent behavior                                   |
-| 6 | **Summary**      | Full change preview (file paths + generated blocks) before writing anything                                                                                   |
+| 6 | **Skills**       | Export Markdown `skills.md` for AI-agent automation, choosing client + install scope                                                                           |
+| 7 | **Summary**      | Full change preview (file paths + generated blocks) before writing anything                                                                                   |
 
 ---
 
@@ -114,6 +116,38 @@ toggle switches to individual mode.
 | **Advanced**             | Client-side ActiveGate load balancing, New RUM Experience (Grail), strict mode                |
 | **Exclusions**           | Exclude packages / classes / methods from bytecode transformation (comma-separated)           |
 | **Build variant**        | Restrict instrumentation to a specific Gradle build variant (regex)                           |
+
+---
+
+## Skills Tab
+
+### AI Skill Export
+
+When **Export AI skill file** is enabled on the Skills tab, the wizard writes a Markdown
+`skills.md` file during **Finish**. The default target depends on the selected AI client and install scope.
+
+The exported skill includes:
+
+- frontmatter metadata and invocation guidance
+- target app modules and selected Dynatrace features
+- capability flags inferred from selected Dynatrace options
+- a quick-reference install-location table for supported AI clients
+- project/module context captured from the wizard, including excluded modules and optional OneAgent SDK targets
+
+User-level = available to all projects; project-level = repository-only.
+
+| Client | User-level path | Project-level path |
+| --- | --- | --- |
+| Claude Code | `~/.claude/skills/` | `.claude/skills/` |
+| Codex | `~/.codex/skills/` | `.codex/skills/` |
+| Copilot | `~/.copilot/skills/` | `.github/skills/` |
+| Cursor | `~/.cursor/skills/` | `.cursor/skills/` |
+| OpenCode | `~/.config/opencode/skill/` | `.opencode/skill/` |
+| AmpCode | `~/.config/agents/skills/` | `.agents/skills/` |
+
+The file is generated **on the fly** when you click **Finish** in the wizard and written directly into your Android project.
+
+The canonical reference skill — covering all setup flows, DSLs, and features — is at [`docs/skills/skills.md`](docs/skills/skills.md). It can be installed manually into any supported AI client without running the wizard.
 
 ---
 
@@ -194,10 +228,11 @@ See [Build & Run from Source](#build--run-from-source) below.
    _(or right-click in the Project view / Editor → Dynatrace Wizard…)_
 3. Follow the wizard steps:
     - **Welcome** — verify project and module detection
-    - **Environment** — enter Application ID + Beacon URL (optionally per-module for multi-app)
     - **Modules** — select modules and instrumentation approach
+     - **Environment** — enter Application ID + Beacon URL (optionally per-module for multi-app)
     - **Technologies** — review compatibility of detected libraries
     - **Features** — configure instrumentation options
+     - **Skills** — choose whether to export a reusable AI skill file and where it should be installed
     - **Summary** — review all changes and click **Finish**
 4. **Sync** your Gradle project to activate the Dynatrace agent
 
@@ -224,7 +259,7 @@ See [Build & Run from Source](#build--run-from-source) below.
 
 ```bash
 # Clone the repository
-git clone https://github.com/HlebMaliborski/dynatrace_wizard.git
+git clone https://github.com/HlebMaliborski/dynatrace-mobile-wizard.git
 cd dynatrace_wizard
 
 # Build the plugin

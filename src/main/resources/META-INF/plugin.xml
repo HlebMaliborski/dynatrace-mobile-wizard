@@ -37,6 +37,7 @@
             <li><b>Environment</b> — enter Application ID and Beacon URL (per-module for multi-app)</li>
             <li><b>Technologies</b> — supported technology overview for your project's dependencies</li>
             <li><b>Features</b> — enable/disable individual instrumentation capabilities</li>
+            <li><b>Skills</b> — export a reusable Markdown <code>skills.md</code> for AI coding agents</li>
             <li><b>Summary</b> — full Gradle code preview; click Finish to apply</li>
         </ol>
 

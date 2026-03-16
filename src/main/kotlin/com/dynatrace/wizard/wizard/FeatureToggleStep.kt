@@ -78,9 +78,9 @@ class FeatureToggleStep {
     }
 
     fun createPanel(): JComponent {
-        excludePackagesField.emptyText.setText("e.g. com.example.analytics, com.third.party")
-        excludeClassesField.emptyText.setText("e.g. com.example.HeavyClass")
-        excludeMethodsField.emptyText.setText("e.g. com.example.Util.expensiveMethod")
+        excludePackagesField.emptyText.setText("E.g. com.example.analytics, com.third.party")
+        excludeClassesField.emptyText.setText("E.g. com.example.HeavyClass")
+        excludeMethodsField.emptyText.setText("E.g. com.example.Util.expensiveMethod")
         buildVariantField.emptyText.setText("Leave empty or 'all' for all variants")
 
         pluginEnabledCheckBox.addActionListener { syncFeatureAvailability() }
@@ -88,7 +88,7 @@ class FeatureToggleStep {
 
         val panel = FormBuilder.createFormBuilder()
             .addComponent(
-                JBLabel("Feature Configuration").apply {
+                JBLabel("Feature configuration").apply {
                     font = JBUI.Fonts.label(16f).asBold()
                     foreground = WizardColors.accent
                     border = JBUI.Borders.emptyBottom(2)
@@ -169,7 +169,7 @@ class FeatureToggleStep {
                 "Requires a Session Replay license. Emits sessionReplay.enabled(true) — " +
                 "available from plugin 8.281+."))
             // ── Exclusions ────────────────────────────────────────────────────
-            .addComponent(TitledSeparator("Exclusions (comma-separated)"))
+            .addComponent(TitledSeparator("Exclusions (Comma-Separated)"))
             .addLabeledComponent(JBLabel("Exclude packages:"),
                 fieldWithHint(excludePackagesField,
                     "Skips all classes in the listed packages."), true)
@@ -224,7 +224,7 @@ class FeatureToggleStep {
      * Returns a panel stacking a text field above a small hint label.
      * The field expands to full width; the hint text wraps automatically.
      */
-    private fun fieldWithHint(field: JBTextField, hint: String): JComponent =
+    private fun fieldWithHint(field: JComponent, hint: String): JComponent =
         JPanel(BorderLayout(0, JBUI.scale(2))).apply {
             isOpaque = false
             field.maximumSize = Dimension(Int.MAX_VALUE, field.preferredSize.height)

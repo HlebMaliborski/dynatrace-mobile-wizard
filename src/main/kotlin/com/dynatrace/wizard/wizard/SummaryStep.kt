@@ -1,6 +1,7 @@
 package com.dynatrace.wizard.wizard
 
 import com.dynatrace.wizard.model.DynatraceConfig
+import com.dynatrace.wizard.model.SkillsExportConfig
 import com.dynatrace.wizard.service.GradleModificationService
 import com.dynatrace.wizard.service.ProjectDetectionService
 import com.dynatrace.wizard.util.DocumentationLinks
@@ -85,9 +86,11 @@ class SummaryStep {
     fun updateSummary(
         projectInfo: ProjectDetectionService.ProjectInfo,
         config: DynatraceConfig,
+        skillsConfig: SkillsExportConfig,
         gradleService: GradleModificationService,
         sdkLibraryModules: List<ProjectDetectionService.ModuleInfo> = emptyList(),
-        deselectedModules: List<ProjectDetectionService.ModuleInfo> = emptyList()
+        deselectedModules: List<ProjectDetectionService.ModuleInfo> = emptyList(),
+        skillsPreview: String? = null
     ) {
         val preview = gradleService.generateChangePreview(projectInfo, config, deselectedModules)
 
@@ -109,6 +112,13 @@ class SummaryStep {
             appendLine("Application modules:       ${if (selectedAppModules.isEmpty()) "None selected" else selectedAppModules.joinToString()}")
             appendLine("Credential mode:           ${if (sharedCredentials) "Shared app credentials" else "Per-module credentials for ${config.moduleCredentials.size} module(s)"}")
             appendLine("Library SDK opt-in:        ${if (sdkLibraryModules.isEmpty()) "None" else sdkLibraryModules.joinToString { it.name }}")
+            appendLine("AI skill export:           ${if (skillsConfig.exportSkillFile) "Enabled" else "Disabled"}")
+            if (skillsConfig.exportSkillFile) {
+                appendLine("Target client:             ${skillsConfig.skillClient.label}")
+                appendLine("Install scope:             ${skillsConfig.skillInstallScope.label}")
+                appendLine("Skill path:                ${skillsConfig.skillFilePath}")
+                appendLine("Skill filename:            skills.md")
+            }
             appendLine("Files likely to change:    root build file${if (selectedAppModules.isNotEmpty() && !projectInfo.usesPluginDsl) ", ${selectedAppModules.size} app module build file(s)" else ""}${if (sdkLibraryModules.isNotEmpty()) ", root SDK helper block" else ""}")
             appendLine()
         }
@@ -193,7 +203,17 @@ class SummaryStep {
             }
         } else ""
 
-        summaryArea.text = atAGlance + warningsSummary + configSummary + preview + sdkPreview + manualStartupSnippet
+        val skillManifestSection = if (!skillsPreview.isNullOrBlank()) buildString {
+            appendLine()
+            appendLine("=== AI Skill Preview ===")
+            appendLine()
+            appendLine("The selected skills.md file will be written with the following content:")
+            appendLine()
+            appendLine(skillsPreview)
+            appendLine()
+        } else ""
+
+        summaryArea.text = atAGlance + warningsSummary + configSummary + preview + sdkPreview + skillManifestSection + manualStartupSnippet
         summaryArea.caretPosition = 0
     }
 }

@@ -51,6 +51,124 @@ class GradleModificationService(private val project: Project) {
             content
                 .replace(Regex("""/\*.*?\*/""", setOf(RegexOption.DOT_MATCHES_ALL)), "")
                 .replace(Regex("""(?<!:)//[^\n]*"""), "")
+
+        /** Generates the `dynatrace { }` block for Kotlin DSL from [config]. */
+        internal fun buildDynatraceBlockKts(config: DynatraceConfig): String {
+            val variantName = if (config.buildVariant == "all" || config.buildVariant.isBlank()) "sampleConfig" else config.buildVariant
+            val variantFilter = if (config.buildVariant == "all" || config.buildVariant.isBlank()) ".*" else config.buildVariant
+            return buildString {
+                appendLine("dynatrace {")
+                if (!config.strictMode) appendLine("    strictMode(false)")
+                if (!config.pluginEnabled) appendLine("    pluginEnabled(false)")
+                appendLine("    configurations {")
+                appendLine("        create(\"$variantName\") {")
+                appendLine("            variantFilter(\"$variantFilter\")")
+                if (!config.autoInstrument) appendLine("            enabled(false)")
+                appendLine("            autoStart {")
+                appendLine("                applicationId(\"${config.applicationId}\")")
+                appendLine("                beaconUrl(\"${config.beaconUrl}\")")
+                if (config.userOptIn) appendLine("                userOptIn(true)")
+                if (!config.autoStartEnabled) appendLine("                enabled(false)")
+                appendLine("            }")
+                val needsUserActionsBlock = !config.userActionsEnabled || config.namePrivacy || !config.composeEnabled
+                if (needsUserActionsBlock) {
+                    appendLine("            userActions {")
+                    if (!config.userActionsEnabled) appendLine("                enabled(false)")
+                    if (config.namePrivacy) appendLine("                namePrivacy(true)")
+                    if (!config.composeEnabled) appendLine("                composeEnabled(false)")
+                    appendLine("            }")
+                }
+                if (!config.webRequestsEnabled) appendLine("            webRequests { enabled(false) }")
+                if (!config.lifecycleEnabled) appendLine("            lifecycle { enabled(false) }")
+                if (!config.crashReporting) appendLine("            crashReporting(false)")
+                if (config.hybridMonitoring) appendLine("            hybridMonitoring(true)")
+                if (config.locationMonitoring) appendLine("            locationMonitoring(true)")
+                if (config.rageTapDetection) {
+                    appendLine("            behavioralEvents {")
+                    appendLine("                detectRageTaps(true)")
+                    appendLine("            }")
+                }
+                if (config.agentBehaviorLoadBalancing || config.agentBehaviorGrail) {
+                    appendLine("            agentBehavior {")
+                    if (config.agentBehaviorLoadBalancing) appendLine("                startupLoadBalancing(true)")
+                    if (config.agentBehaviorGrail) appendLine("                startupWithGrailEnabled(true)")
+                    appendLine("            }")
+                }
+                if (config.sessionReplayEnabled) appendLine("            sessionReplay.enabled(true)")
+                val packages = config.excludePackages.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                val classes  = config.excludeClasses.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                val methods  = config.excludeMethods.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                if (packages.isNotEmpty() || classes.isNotEmpty() || methods.isNotEmpty()) {
+                    appendLine("            exclude {")
+                    if (packages.isNotEmpty()) appendLine("                packages(${packages.joinToString(", ") { "\"$it\"" }})")
+                    if (classes.isNotEmpty())  appendLine("                classes(${classes.joinToString(", ") { "\"$it\"" }})")
+                    if (methods.isNotEmpty())  appendLine("                methods(${methods.joinToString(", ") { "\"$it\"" }})")
+                    appendLine("            }")
+                }
+                appendLine("        }")
+                appendLine("    }")
+                append("}")
+            }
+        }
+
+        /** Generates the `dynatrace { }` block for Groovy DSL from [config]. */
+        internal fun buildDynatraceBlockGroovy(config: DynatraceConfig): String {
+            val variantName = if (config.buildVariant == "all" || config.buildVariant.isBlank()) "sampleConfig" else config.buildVariant
+            val variantFilter = if (config.buildVariant == "all" || config.buildVariant.isBlank()) ".*" else config.buildVariant
+            return buildString {
+                appendLine("dynatrace {")
+                if (!config.strictMode) appendLine("    strictMode false")
+                if (!config.pluginEnabled) appendLine("    pluginEnabled false")
+                appendLine("    configurations {")
+                appendLine("        $variantName {")
+                appendLine("            variantFilter '$variantFilter'")
+                if (!config.autoInstrument) appendLine("            enabled false")
+                appendLine("            autoStart {")
+                appendLine("                applicationId '${config.applicationId}'")
+                appendLine("                beaconUrl '${config.beaconUrl}'")
+                if (config.userOptIn) appendLine("                userOptIn true")
+                if (!config.autoStartEnabled) appendLine("                enabled false")
+                appendLine("            }")
+                val needsUserActionsBlock = !config.userActionsEnabled || config.namePrivacy || !config.composeEnabled
+                if (needsUserActionsBlock) {
+                    appendLine("            userActions {")
+                    if (!config.userActionsEnabled) appendLine("                enabled false")
+                    if (config.namePrivacy) appendLine("                namePrivacy true")
+                    if (!config.composeEnabled) appendLine("                composeEnabled false")
+                    appendLine("            }")
+                }
+                if (!config.webRequestsEnabled) appendLine("            webRequests { enabled false }")
+                if (!config.lifecycleEnabled) appendLine("            lifecycle { enabled false }")
+                if (!config.crashReporting) appendLine("            crashReporting false")
+                if (config.hybridMonitoring) appendLine("            hybridMonitoring true")
+                if (config.locationMonitoring) appendLine("            locationMonitoring true")
+                if (config.rageTapDetection) {
+                    appendLine("            behavioralEvents {")
+                    appendLine("                detectRageTaps true")
+                    appendLine("            }")
+                }
+                if (config.agentBehaviorLoadBalancing || config.agentBehaviorGrail) {
+                    appendLine("            agentBehavior {")
+                    if (config.agentBehaviorLoadBalancing) appendLine("                startupLoadBalancing true")
+                    if (config.agentBehaviorGrail) appendLine("                startupWithGrailEnabled true")
+                    appendLine("            }")
+                }
+                if (config.sessionReplayEnabled) appendLine("            sessionReplay.enabled true")
+                val packages = config.excludePackages.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                val classes  = config.excludeClasses.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                val methods  = config.excludeMethods.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                if (packages.isNotEmpty() || classes.isNotEmpty() || methods.isNotEmpty()) {
+                    appendLine("            exclude {")
+                    if (packages.isNotEmpty()) appendLine("                packages ${packages.joinToString(", ") { "\"$it\"" }}")
+                    if (classes.isNotEmpty())  appendLine("                classes ${classes.joinToString(", ") { "\"$it\"" }}")
+                    if (methods.isNotEmpty())  appendLine("                methods ${methods.joinToString(", ") { "\"$it\"" }}")
+                    appendLine("            }")
+                }
+                appendLine("        }")
+                appendLine("    }")
+                append("}")
+            }
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -1076,131 +1194,14 @@ buildscript {
     }
 
     // -------------------------------------------------------------------------
-    // dynatrace {} block builders (shared by both paths)
+    // dynatrace {} block builders (shared by both paths) — delegate to companion
     // -------------------------------------------------------------------------
 
-    private fun buildDynatraceBlockKts(config: DynatraceConfig): String {
-        val variantName = if (config.buildVariant == "all" || config.buildVariant.isBlank()) "sampleConfig" else config.buildVariant
-        val variantFilter = if (config.buildVariant == "all" || config.buildVariant.isBlank()) ".*" else config.buildVariant
-        return buildString {
-            appendLine("dynatrace {")
-            // Top-level switches
-            if (!config.strictMode) appendLine("    strictMode(false)")
-            if (!config.pluginEnabled) appendLine("    pluginEnabled(false)")
-            appendLine("    configurations {")
-            appendLine("        create(\"$variantName\") {")
-            appendLine("            variantFilter(\"$variantFilter\")")
-            if (!config.autoInstrument) appendLine("            enabled(false)")
-            // autoStart block — always emitted; add enabled(false) for Direct Boot apps
-            appendLine("            autoStart {")
-            appendLine("                applicationId(\"${config.applicationId}\")")
-            appendLine("                beaconUrl(\"${config.beaconUrl}\")")
-            if (config.userOptIn) appendLine("                userOptIn(true)")
-            if (!config.autoStartEnabled) appendLine("                enabled(false)")
-            appendLine("            }")
-            // userActions block — emit if any sub-property differs from default
-            val needsUserActionsBlock = !config.userActionsEnabled || config.namePrivacy || !config.composeEnabled
-            if (needsUserActionsBlock) {
-                appendLine("            userActions {")
-                if (!config.userActionsEnabled) appendLine("                enabled(false)")
-                if (config.namePrivacy) appendLine("                namePrivacy(true)")
-                if (!config.composeEnabled) appendLine("                composeEnabled(false)")
-                appendLine("            }")
-            }
-            if (!config.webRequestsEnabled) appendLine("            webRequests { enabled(false) }")
-            if (!config.lifecycleEnabled) appendLine("            lifecycle { enabled(false) }")
-            if (!config.crashReporting) appendLine("            crashReporting(false)")
-            if (config.hybridMonitoring) appendLine("            hybridMonitoring(true)")
-            if (config.locationMonitoring) appendLine("            locationMonitoring(true)")
-            // Behavioral events
-            if (config.rageTapDetection) {
-                appendLine("            behavioralEvents {")
-                appendLine("                detectRageTaps(true)")
-                appendLine("            }")
-            }
-            // Agent behavior (advanced)
-            if (config.agentBehaviorLoadBalancing || config.agentBehaviorGrail) {
-                appendLine("            agentBehavior {")
-                if (config.agentBehaviorLoadBalancing) appendLine("                startupLoadBalancing(true)")
-                if (config.agentBehaviorGrail) appendLine("                startupWithGrailEnabled(true)")
-                appendLine("            }")
-            }
-            // Session Replay
-            if (config.sessionReplayEnabled) appendLine("            sessionReplay.enabled(true)")
-            // Exclusions
-            val packages = config.excludePackages.split(",").map { it.trim() }.filter { it.isNotBlank() }
-            val classes  = config.excludeClasses.split(",").map { it.trim() }.filter { it.isNotBlank() }
-            val methods  = config.excludeMethods.split(",").map { it.trim() }.filter { it.isNotBlank() }
-            if (packages.isNotEmpty() || classes.isNotEmpty() || methods.isNotEmpty()) {
-                appendLine("            exclude {")
-                if (packages.isNotEmpty()) appendLine("                packages(${packages.joinToString(", ") { "\"$it\"" }})")
-                if (classes.isNotEmpty())  appendLine("                classes(${classes.joinToString(", ") { "\"$it\"" }})")
-                if (methods.isNotEmpty())  appendLine("                methods(${methods.joinToString(", ") { "\"$it\"" }})")
-                appendLine("            }")
-            }
-            appendLine("        }")
-            appendLine("    }")
-            append("}")
-        }
-    }
+    private fun buildDynatraceBlockKts(config: DynatraceConfig): String =
+        Companion.buildDynatraceBlockKts(config)
 
-    private fun buildDynatraceBlockGroovy(config: DynatraceConfig): String {
-        val variantName = if (config.buildVariant == "all" || config.buildVariant.isBlank()) "sampleConfig" else config.buildVariant
-        val variantFilter = if (config.buildVariant == "all" || config.buildVariant.isBlank()) ".*" else config.buildVariant
-        return buildString {
-            appendLine("dynatrace {")
-            if (!config.strictMode) appendLine("    strictMode false")
-            if (!config.pluginEnabled) appendLine("    pluginEnabled false")
-            appendLine("    configurations {")
-            appendLine("        $variantName {")
-            appendLine("            variantFilter '$variantFilter'")
-            if (!config.autoInstrument) appendLine("            enabled false")
-            appendLine("            autoStart {")
-            appendLine("                applicationId '${config.applicationId}'")
-            appendLine("                beaconUrl '${config.beaconUrl}'")
-            if (config.userOptIn) appendLine("                userOptIn true")
-            if (!config.autoStartEnabled) appendLine("                enabled false")
-            appendLine("            }")
-            val needsUserActionsBlock = !config.userActionsEnabled || config.namePrivacy || !config.composeEnabled
-            if (needsUserActionsBlock) {
-                appendLine("            userActions {")
-                if (!config.userActionsEnabled) appendLine("                enabled false")
-                if (config.namePrivacy) appendLine("                namePrivacy true")
-                if (!config.composeEnabled) appendLine("                composeEnabled false")
-                appendLine("            }")
-            }
-            if (!config.webRequestsEnabled) appendLine("            webRequests { enabled false }")
-            if (!config.lifecycleEnabled) appendLine("            lifecycle { enabled false }")
-            if (!config.crashReporting) appendLine("            crashReporting false")
-            if (config.hybridMonitoring) appendLine("            hybridMonitoring true")
-            if (config.locationMonitoring) appendLine("            locationMonitoring true")
-            if (config.rageTapDetection) {
-                appendLine("            behavioralEvents {")
-                appendLine("                detectRageTaps true")
-                appendLine("            }")
-            }
-            if (config.agentBehaviorLoadBalancing || config.agentBehaviorGrail) {
-                appendLine("            agentBehavior {")
-                if (config.agentBehaviorLoadBalancing) appendLine("                startupLoadBalancing true")
-                if (config.agentBehaviorGrail) appendLine("                startupWithGrailEnabled true")
-                appendLine("            }")
-            }
-            if (config.sessionReplayEnabled) appendLine("            sessionReplay.enabled true")
-            val packages = config.excludePackages.split(",").map { it.trim() }.filter { it.isNotBlank() }
-            val classes  = config.excludeClasses.split(",").map { it.trim() }.filter { it.isNotBlank() }
-            val methods  = config.excludeMethods.split(",").map { it.trim() }.filter { it.isNotBlank() }
-            if (packages.isNotEmpty() || classes.isNotEmpty() || methods.isNotEmpty()) {
-                appendLine("            exclude {")
-                if (packages.isNotEmpty()) appendLine("                packages ${packages.joinToString(", ") { "\"$it\"" }}")
-                if (classes.isNotEmpty())  appendLine("                classes ${classes.joinToString(", ") { "\"$it\"" }}")
-                if (methods.isNotEmpty())  appendLine("                methods ${methods.joinToString(", ") { "\"$it\"" }}")
-                appendLine("            }")
-            }
-            appendLine("        }")
-            appendLine("    }")
-            append("}")
-        }
-    }
+    private fun buildDynatraceBlockGroovy(config: DynatraceConfig): String =
+        Companion.buildDynatraceBlockGroovy(config)
 
     /**
      * Adds a `subprojects {}` block to [projectFile] (the root build file) that injects

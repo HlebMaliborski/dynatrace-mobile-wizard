@@ -1,0 +1,790 @@
+package com.dynatrace.wizard.service
+
+import com.dynatrace.wizard.model.DynatraceConfig
+import com.dynatrace.wizard.model.SkillCapability
+import com.dynatrace.wizard.model.SkillClient
+import com.dynatrace.wizard.model.SkillInstallLocation
+import com.dynatrace.wizard.model.SkillInstallScope
+import com.dynatrace.wizard.model.SkillsExportConfig
+import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.guessProjectDir
+import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.VirtualFile
+import java.nio.charset.StandardCharsets
+import java.nio.file.Path
+import java.time.Instant
+
+/**
+ * Generates and writes Markdown-only `skills.md` files from the dedicated Skills tab.
+ */
+class SkillsExportService(private val project: Project? = null) {
+
+    companion object {
+        const val SKILL_SLUG = "dynatrace-android-sdk"
+        private const val GENERATOR = "dynatrace-wizard"
+        private const val SKILL_FILE_NAME = "skills.md"
+    }
+
+    fun buildInstallLocations(): List<SkillInstallLocation> = SkillClient.entries.map { client ->
+        SkillInstallLocation(
+            client = client,
+            userLevelPath = buildPathFor(client, SkillInstallScope.USER_LEVEL),
+            projectLevelPath = buildPathFor(client, SkillInstallScope.PROJECT_LEVEL)
+        )
+    }
+
+    fun resolveOutputPath(config: SkillsExportConfig): String {
+        val fallback = buildPathFor(config.skillClient, config.skillInstallScope)
+        return normalizePath(config.skillFilePath, fallback)
+    }
+
+    fun generateSkillsMarkdown(
+        projectInfo: ProjectDetectionService.ProjectInfo,
+        dynatraceConfig: DynatraceConfig,
+        skillsConfig: SkillsExportConfig,
+        sdkLibraryModules: List<ProjectDetectionService.ModuleInfo> = emptyList(),
+        deselectedModules: List<ProjectDetectionService.ModuleInfo> = emptyList(),
+        generatedAt: Instant = Instant.now()
+    ): String {
+        val selectedAppModules = projectInfo.appModules.map { it.name }.ifEmpty { listOf(projectInfo.appModuleName) }
+        val featureModules     = projectInfo.featureModules.map { it.name }
+        val libraryModules     = projectInfo.libraryModules.map { it.name }
+        val isKts              = projectInfo.isKotlinDsl
+        val usesPluginDsl      = projectInfo.usesPluginDsl
+
+        val blockKts    = GradleModificationService.buildDynatraceBlockKts(dynatraceConfig)
+        val blockGroovy = GradleModificationService.buildDynatraceBlockGroovy(dynatraceConfig)
+
+        val installTableRows = buildInstallLocations().joinToString("\n") {
+            "| ${it.client.label} | `${it.userLevelPath}` | `${it.projectLevelPath}` |"
+        }
+        val selectedInstallPath = resolveOutputPath(skillsConfig)
+
+        val perModuleSection = if (dynatraceConfig.moduleCredentials.isNotEmpty()) buildString {
+            appendLine("## Per-Module Credentials")
+            appendLine()
+            appendLine("| Module | Application ID | Beacon URL |")
+            appendLine("| --- | --- | --- |")
+            dynatraceConfig.moduleCredentials.forEach { (name, creds) ->
+                appendLine("| $name | `${creds.appId}` | `${creds.beaconUrl}` |")
+            }
+            appendLine()
+        } else ""
+
+        val featureSummary = buildList {
+            add("Plugin enabled: ${yesNo(dynatraceConfig.pluginEnabled)}")
+            add("Auto-instrumentation: ${yesNo(dynatraceConfig.autoInstrument)}")
+            add("Auto-start: ${yesNo(dynatraceConfig.autoStartEnabled)}")
+            add("Crash reporting: ${yesNo(dynatraceConfig.crashReporting)}")
+            add("Session Replay: ${yesNo(dynatraceConfig.sessionReplayEnabled)}")
+            add("User opt-in: ${yesNo(dynatraceConfig.userOptIn)}")
+            add("Name privacy: ${yesNo(dynatraceConfig.namePrivacy)}")
+            add("Compose instrumentation: ${yesNo(dynatraceConfig.composeEnabled)}")
+            add("Rage tap detection: ${yesNo(dynatraceConfig.rageTapDetection)}")
+            add("Web request monitoring: ${yesNo(dynatraceConfig.webRequestsEnabled)}")
+            add("Lifecycle monitoring: ${yesNo(dynatraceConfig.lifecycleEnabled)}")
+            add("Hybrid WebView monitoring: ${yesNo(dynatraceConfig.hybridMonitoring)}")
+            add("Location monitoring: ${yesNo(dynatraceConfig.locationMonitoring)}")
+            add("Strict mode: ${yesNo(dynatraceConfig.strictMode)}")
+        }.joinToString("\n") { "- $it" }
+
+        val exclusionsSection = buildString {
+            val pkgs = dynatraceConfig.excludePackages.ifBlank { "None" }
+            val cls  = dynatraceConfig.excludeClasses.ifBlank { "None" }
+            val mth  = dynatraceConfig.excludeMethods.ifBlank { "None" }
+            appendLine("- Packages: $pkgs")
+            appendLine("- Classes:  $cls")
+            append("- Methods:  $mth")
+        }
+
+        // Manual startup snippet pre-filled with real credentials
+        val manualStartupSection = if (!dynatraceConfig.autoStartEnabled) """
+
+## ⚠️ Manual Startup Required
+
+Auto-start is **disabled** in this project. Add the following to your `Application.onCreate()`:
+
+```kotlin
+// Kotlin
+import com.dynatrace.android.agent.Dynatrace
+import com.dynatrace.android.agent.conf.DynatraceConfigurationBuilder
+
+Dynatrace.startup(
+    this,
+    DynatraceConfigurationBuilder(
+        "${dynatraceConfig.applicationId}",
+        "${dynatraceConfig.beaconUrl}"
+    ).buildConfiguration()
+)
+```
+
+```java
+// Java
+Dynatrace.startup(this, new DynatraceConfigurationBuilder(
+    "${dynatraceConfig.applicationId}",
+    "${dynatraceConfig.beaconUrl}"
+).buildConfiguration());
+```
+
+> Values in `DynatraceConfigurationBuilder` override those in the `dynatrace {}` DSL block.
+""" else ""
+
+        // OneAgent SDK section pre-filled with real module names
+        val sdkSection = if (sdkLibraryModules.isNotEmpty()) {
+            val nameList = sdkLibraryModules.map { it.name }
+            val allLib   = projectInfo.libraryModules.map { it.name }
+            val filterAll = nameList.size == allLib.size
+            val filterBlock = if (filterAll) """
+subprojects {
+    pluginManager.withPlugin("com.android.library") {
+        dependencies {
+            add("implementation", com.dynatrace.tools.android.DynatracePlugin.agentDependency())
+        }
+    }
+}""" else """
+subprojects { project ->
+    pluginManager.withPlugin("com.android.library") {
+        if (${nameList.joinToString(" || ") { """project.name == "${it}"""" }}) {
+            dependencies {
+                add("implementation", com.dynatrace.tools.android.DynatracePlugin.agentDependency())
+            }
+        }
+    }
+}"""
+            """
+
+## OneAgent SDK — Library Modules
+
+The following library modules are opted into `agentDependency()` so their code can call Dynatrace APIs directly.
+Selected: ${nameList.joinToString()}
+
+Add this block to the **root** `build.gradle.kts`:
+
+```kotlin$filterBlock
+```
+"""
+        } else ""
+
+        val detectKnownFacts = buildString {
+            appendLine("| Finding | Wizard-detected value |")
+            appendLine("| --- | --- |")
+            appendLine("| DSL type | ${if (isKts) "Kotlin DSL (`.kts`)" else "Groovy DSL"} |")
+            appendLine("| Plugin approach | ${if (usesPluginDsl) "Plugin DSL (`plugins {}` block)" else "Buildscript classpath"} |")
+            appendLine("| Setup flow | ${projectInfo.setupFlow.title} |")
+            appendLine("| Application modules | ${selectedAppModules.joinToString()} |")
+            if (featureModules.isNotEmpty()) appendLine("| Feature modules | ${featureModules.joinToString()} |")
+            if (libraryModules.isNotEmpty()) appendLine("| Library modules | ${libraryModules.joinToString()} |")
+            append("| Dynatrace already configured | ${if (projectInfo.appModules.any { it.hasDynatrace }) "Yes — update mode" else "No — fresh setup"} |")
+        }
+
+        val pluginApplySection = if (usesPluginDsl) """
+**This project uses Plugin DSL.** Add to the root `build.gradle${if (isKts) ".kts" else ""}`:
+
+${if (isKts) """```kotlin
+plugins {
+    id("com.dynatrace.instrumentation") version "8.+"
+}
+```""" else """```groovy
+plugins {
+    id 'com.dynatrace.instrumentation' version '8.+'
+}
+```"""}
+""" else """
+**This project uses Buildscript Classpath.** Add to the root `build.gradle${if (isKts) ".kts" else ""}`:
+
+${if (isKts) """```kotlin
+buildscript {
+    repositories { mavenCentral(); google() }
+    dependencies {
+        classpath("com.dynatrace.tools.android:gradle-plugin:8.+")
+    }
+}
+```
+
+Then in each app module `build.gradle.kts`:
+```kotlin
+apply(plugin = "com.dynatrace.instrumentation")
+```""" else """```groovy
+buildscript {
+    repositories { mavenCentral(); google() }
+    dependencies {
+        classpath 'com.dynatrace.tools.android:gradle-plugin:8.+'
+    }
+}
+```
+
+Then in each app module `build.gradle`:
+```groovy
+apply plugin: 'com.dynatrace.instrumentation'
+```"""}
+"""
+
+        return """
+---
+name: $SKILL_SLUG
+description: >
+  Project-specific Dynatrace Mobile SDK setup generated by Dynatrace Wizard for this Android project.
+  Contains the exact Gradle configuration, selected features, and full setup reference.
+  Use when asked to add, update, or troubleshoot Dynatrace in this project.
+license: Apache-2.0
+category: sdk-setup
+parent: $SKILL_SLUG
+disable-model-invocation: true
+generated-at: $generatedAt
+generated-by: $GENERATOR
+---
+
+# Dynatrace Android SDK
+
+Project-specific skill generated by Dynatrace Wizard on $generatedAt.
+Contains the **exact configuration for this project** plus the complete setup reference.
+
+---
+
+## Invoke This Skill When
+
+- User asks to add or reconfigure Dynatrace in this Android project
+- User wants to know the current Application ID, Beacon URL, or enabled features
+- User wants crash reporting, Session Replay, user-action capture, or web-request monitoring
+- User asks why Dynatrace is not capturing data
+- User wants to update, migrate, or remove Dynatrace Gradle configuration
+$manualStartupSection
+---
+
+## Phase 1: Detect
+
+Run these commands in the project root before making any changes.
+They reveal the build system, DSL type, existing Dynatrace state, and which libraries are present.
+
+```bash
+# ── Project structure ─────────────────────────────────────────────────────────
+ls build.gradle build.gradle.kts settings.gradle settings.gradle.kts 2>/dev/null
+find . -name "build.gradle" -o -name "build.gradle.kts" 2>/dev/null \
+  | grep -v '/\.gradle/' | sort
+
+# ── Existing Dynatrace configuration ─────────────────────────────────────────
+grep -rn 'com.dynatrace.instrumentation' \
+  build.gradle* app/build.gradle* */build.gradle* 2>/dev/null | head -10
+grep -rn 'dynatrace {' \
+  build.gradle* app/build.gradle* */build.gradle* 2>/dev/null | head -5
+grep -rE 'Dynatrace\.startup|DynatraceConfigurationBuilder' app/src/ 2>/dev/null | head -5
+grep -rE 'applicationId|beaconUrl' \
+  build.gradle* app/build.gradle* */build.gradle* 2>/dev/null \
+  | grep -v 'android {' | head -10
+
+# ── Android Gradle Plugin and SDK ─────────────────────────────────────────────
+grep -rE 'com\.android\.tools\.build:gradle|com\.android\.application' \
+  build.gradle* settings.gradle* 2>/dev/null | head -5
+grep -E 'compileSdk|minSdk|targetSdk|compileSdkVersion|minSdkVersion|targetSdkVersion' \
+  app/build.gradle app/build.gradle.kts 2>/dev/null | head -6
+
+# ── DSL type ──────────────────────────────────────────────────────────────────
+ls app/build.gradle app/build.gradle.kts 2>/dev/null
+grep -n 'plugins {' build.gradle build.gradle.kts 2>/dev/null | head -3
+grep -n 'buildscript' build.gradle build.gradle.kts 2>/dev/null | head -3
+
+# ── Repository setup ──────────────────────────────────────────────────────────
+grep -rn 'mavenCentral' settings.gradle* build.gradle* 2>/dev/null | head -5
+
+# ── Application class ─────────────────────────────────────────────────────────
+find app/src/main -name "*.kt" -o -name "*.java" 2>/dev/null \
+  | xargs grep -l ': Application()' 2>/dev/null | head -3
+
+# ── Auto-instrumented libraries ───────────────────────────────────────────────
+grep -rE 'okhttp|retrofit' app/build.gradle app/build.gradle.kts 2>/dev/null | head -5
+grep -rE 'compose|androidx\.compose' app/build.gradle app/build.gradle.kts 2>/dev/null | head -5
+grep -rE 'androidx\.navigation' app/build.gradle app/build.gradle.kts 2>/dev/null | head -3
+grep -rn 'WebView\|loadUrl' app/src/main 2>/dev/null | head -5
+find app/src/main -name "*.kt" 2>/dev/null | head -3
+find app/src/main -name "*.java" 2>/dev/null | head -3
+```
+
+**Known values detected by Dynatrace Wizard for this project:**
+
+$detectKnownFacts
+
+---
+
+## This Project's Configuration
+
+| Property | Value |
+| --- | --- |
+| Setup flow | `${projectInfo.setupFlow.title}` |
+| Instrumentation approach | `${if (usesPluginDsl) "Plugin DSL at root" else "Buildscript classpath + per-module plugin"}` |
+| Android DSL | `${if (isKts) "Kotlin DSL (.kts)" else "Groovy DSL"}` |
+| Application modules | ${selectedAppModules.joinToString()} |
+| Dynamic feature modules | ${if (featureModules.isEmpty()) "None" else featureModules.joinToString()} |
+| Library modules | ${if (libraryModules.isEmpty()) "None" else libraryModules.joinToString()} |
+| Deselected modules | ${if (deselectedModules.isEmpty()) "None" else deselectedModules.joinToString { it.name }} |
+| Library modules with OneAgent SDK | ${if (sdkLibraryModules.isEmpty()) "None" else sdkLibraryModules.joinToString { it.name }} |
+| Application ID | `${dynatraceConfig.applicationId}` |
+| Beacon URL | `${dynatraceConfig.beaconUrl}` |
+| Build variant filter | `${dynatraceConfig.buildVariant}` |
+
+### Selected Features
+
+$featureSummary
+
+### Exclusions
+
+$exclusionsSection
+
+$perModuleSection
+### Generated `dynatrace {}` Block — Kotlin DSL
+
+```kotlin
+$blockKts
+```
+
+### Generated `dynatrace {}` Block — Groovy DSL
+
+```groovy
+$blockGroovy
+```
+$sdkSection
+---
+
+## Step 0 — Identify the Project Layout
+
+Before writing any code, determine:
+
+| Question | How to check |
+| --- | --- |
+| **Single-app or multi-module?** | Count `com.android.application` plugin declarations across all `build.gradle(.kts)` files |
+| **Feature modules present?** | Look for `com.android.dynamic-feature` plugin in any module |
+| **Multiple app modules?** | More than one `com.android.application` module |
+| **Kotlin DSL or Groovy?** | File extension: `.kts` = Kotlin DSL; no extension = Groovy |
+| **Plugin DSL or Buildscript?** | Root build file has `plugins { }` block → Plugin DSL; has `buildscript { dependencies { classpath … } }` → Buildscript Classpath |
+
+---
+
+## Step 1 — Add mavenCentral() Repository
+
+The Dynatrace plugin is distributed via Maven Central. Ensure it is present in all repository blocks that resolve plugins.
+
+**Kotlin DSL (`settings.gradle.kts` — preferred for AGP 7+):**
+```kotlin
+pluginManagement {
+    repositories {
+        mavenCentral()
+        google()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositories {
+        mavenCentral()
+        google()
+    }
+}
+```
+
+**Groovy (`settings.gradle`):**
+```groovy
+pluginManagement {
+    repositories {
+        mavenCentral()
+        google()
+        gradlePluginPortal()
+    }
+}
+```
+
+For projects that still use a `buildscript {}` block in the root `build.gradle(.kts)`, add `mavenCentral()` there too:
+
+```kotlin
+// Kotlin DSL
+buildscript {
+    repositories { mavenCentral(); google() }
+}
+```
+
+```groovy
+// Groovy
+buildscript {
+    repositories { mavenCentral(); google() }
+}
+```
+
+---
+
+## Step 2 — Apply the Plugin
+$pluginApplySection
+
+> **Important:** The coordinator plugin (`com.dynatrace.instrumentation`) **must** be declared at the project root, never inside an app module.
+
+---
+
+## Step 3 — Add the `dynatrace { }` Configuration Block
+
+The `dynatrace { }` block lives in the same file where the plugin is applied (root for Plugin DSL, app module for Buildscript Classpath).
+
+**Kotlin DSL — minimal:**
+```kotlin
+dynatrace {
+    configurations {
+        create("sampleConfig") {
+            variantFilter(".*")
+            autoStart {
+                applicationId("${dynatraceConfig.applicationId.ifBlank { "<YOUR_APPLICATION_ID>" }}")
+                beaconUrl("${dynatraceConfig.beaconUrl.ifBlank { "<YOUR_BEACON_URL>" }}")
+            }
+        }
+    }
+}
+```
+
+**Groovy — minimal:**
+```groovy
+dynatrace {
+    configurations {
+        sampleConfig {
+            variantFilter '.*'
+            autoStart {
+                applicationId '${dynatraceConfig.applicationId.ifBlank { "<YOUR_APPLICATION_ID>" }}'
+                beaconUrl '${dynatraceConfig.beaconUrl.ifBlank { "<YOUR_BEACON_URL>" }}'
+            }
+        }
+    }
+}
+```
+
+---
+
+## Step 4 — Full Feature Reference
+
+### Top-level switches
+
+| Option (Kotlin DSL) | Option (Groovy DSL) | Default | Description |
+| --- | --- | --- | --- |
+| `strictMode(false)` | `strictMode false` | `false` | When `true`: build fails if no variant matches `variantFilter` |
+| `pluginEnabled(false)` | `pluginEnabled false` | `true` | Global kill-switch — disables all bytecode instrumentation without removing config |
+
+### Inside `configurations { create("name") { … } }`
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `variantFilter("regex")` | — | **Required.** Regex matching variant names (`".*"` = all) |
+| `enabled(false)` | `true` | Disables auto-instrumentation for this variant config |
+
+#### `autoStart { }` block
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `applicationId("…")` | — | **Required.** Dynatrace Application ID |
+| `beaconUrl("…")` | — | **Required.** Dynatrace Beacon URL (HTTPS) |
+| `userOptIn(true)` | `false` | Require explicit user consent before data capture begins |
+| `enabled(false)` | `true` | Disable auto-start (Direct Boot apps call `Dynatrace.startup()` manually) |
+
+#### `userActions { }` block
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `enabled(false)` | `true` | Disable automatic user-action capture |
+| `namePrivacy(true)` | `false` | Mask PII in action names |
+| `composeEnabled(false)` | `true` | Disable Jetpack Compose instrumentation |
+
+#### Other monitoring toggles
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `webRequests { enabled(false) }` | `true` | Disable HTTP/network request monitoring |
+| `lifecycle { enabled(false) }` | `true` | Disable Activity/Fragment lifecycle monitoring |
+| `crashReporting(false)` | `true` | Disable crash reporting |
+| `hybridMonitoring(true)` | `false` | Enable WebView hybrid monitoring |
+| `locationMonitoring(true)` | `false` | Enable GPS location capture |
+| `sessionReplay.enabled(true)` | `false` | Enable Session Replay (requires Privacy approval) |
+
+#### `behavioralEvents { }` block
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `detectRageTaps(true)` | `false` | Detect frustrated user tap patterns |
+
+#### `agentBehavior { }` block (advanced)
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `startupLoadBalancing(true)` | `false` | Client-side ActiveGate load balancing at agent startup |
+| `startupWithGrailEnabled(true)` | `false` | New RUM Experience / Grail data pipeline |
+
+#### `exclude { }` block
+
+| Option | Example | Description |
+| --- | --- | --- |
+| `packages("…", "…")` | `"com.example.heavy"` | Exclude entire packages from bytecode transformation |
+| `classes("…", "…")` | `"com.example.Util"` | Exclude specific classes |
+| `methods("…", "…")` | `"com.example.Util.expensiveMethod"` | Exclude specific methods |
+
+---
+
+## Multi-Module Project Patterns
+
+### Feature Modules (`com.android.dynamic-feature`)
+
+Dynamic feature modules are instrumented **automatically** — no changes needed in feature module build files.
+
+```
+root/
+  build.gradle.kts          ← plugin declaration (Plugin DSL)
+  app/build.gradle.kts      ← dynatrace { } block + autoStart credentials
+  feature_login/            ← no changes needed
+  feature_checkout/         ← no changes needed
+```
+
+### Multi-App — Plugin DSL Coordinator (recommended)
+
+The coordinator at root instruments all app submodules automatically:
+
+```kotlin
+// root build.gradle.kts
+plugins {
+    id("com.dynatrace.instrumentation") version "8.+"
+}
+dynatrace {
+    configurations {
+        create("sampleConfig") {
+            variantFilter(".*")
+            autoStart {
+                applicationId("SHARED_APP_ID")
+                beaconUrl("https://tenant.live.dynatrace.com/mbeacon")
+            }
+        }
+    }
+}
+```
+
+### Multi-App — Per-Module Buildscript Classpath
+
+Use when each module needs its own Application ID / Beacon URL:
+
+```kotlin
+// root build.gradle.kts
+buildscript {
+    dependencies { classpath("com.dynatrace.tools.android:gradle-plugin:8.+") }
+}
+
+// each app module build.gradle.kts
+plugins {
+    id("com.android.application")
+    id("com.dynatrace.instrumentation.module") // no version — inherited from classpath
+}
+dynatrace {
+    configurations {
+        create("sampleConfig") {
+            variantFilter(".*")
+            autoStart {
+                applicationId("MODULE_SPECIFIC_APP_ID")
+                beaconUrl("https://tenant.live.dynatrace.com/mbeacon")
+            }
+        }
+    }
+}
+```
+
+> `com.dynatrace.instrumentation.module` must be declared **without** a version — the classpath entry supplies it.
+
+---
+
+## OneAgent SDK for Library Modules
+
+If a library module's code needs to call Dynatrace APIs directly (e.g. `Dynatrace.enterAction()`):
+
+```kotlin
+// All library modules
+subprojects {
+    pluginManager.withPlugin("com.android.library") {
+        dependencies {
+            add("implementation", com.dynatrace.tools.android.DynatracePlugin.agentDependency())
+        }
+    }
+}
+
+// Specific modules only
+subprojects { project ->
+    pluginManager.withPlugin("com.android.library") {
+        if (project.name == "lib-analytics" || project.name == "lib-network") {
+            dependencies {
+                add("implementation", com.dynatrace.tools.android.DynatracePlugin.agentDependency())
+            }
+        }
+    }
+}
+```
+
+---
+
+## Manual Startup (when `autoStart.enabled(false)`)
+
+```kotlin
+// Kotlin — Application.onCreate()
+import com.dynatrace.android.agent.Dynatrace
+import com.dynatrace.android.agent.conf.DynatraceConfigurationBuilder
+
+Dynatrace.startup(
+    this,
+    DynatraceConfigurationBuilder(
+        "${dynatraceConfig.applicationId.ifBlank { "<YOUR_APPLICATION_ID>" }}",
+        "${dynatraceConfig.beaconUrl.ifBlank { "<YOUR_BEACON_URL>" }}"
+    ).buildConfiguration()
+)
+```
+
+```java
+// Java
+Dynatrace.startup(this, new DynatraceConfigurationBuilder(
+    "${dynatraceConfig.applicationId.ifBlank { "<YOUR_APPLICATION_ID>" }}",
+    "${dynatraceConfig.beaconUrl.ifBlank { "<YOUR_BEACON_URL>" }}"
+).buildConfiguration());
+```
+
+---
+
+## Removing Dynatrace Configuration
+
+1. Delete the `dynatrace { }` block from all Gradle files
+2. Remove the plugin from `plugins { }` or `buildscript { dependencies { classpath … } }`
+3. Remove any `apply plugin: 'com.dynatrace.instrumentation'` lines
+4. Sync Gradle
+
+---
+
+## Common Issues
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| Build fails: "Could not resolve `com.dynatrace.tools.android:gradle-plugin`" | `mavenCentral()` missing from plugin repositories | Add `mavenCentral()` to `pluginManagement.repositories` in `settings.gradle(.kts)` |
+| No data in Dynatrace after build | `beaconUrl` is HTTP instead of HTTPS | Use `https://` URL |
+| `dynatrace { }` red in IDE | Plugin applied in app module instead of root (Plugin DSL) | Move plugin declaration and config to root `build.gradle(.kts)` |
+| Build fails: "No matching variant found" | `variantFilter` regex doesn't match any variant | Use `".*"` or match the exact variant name |
+| Duplicate plugin error | Both `com.dynatrace.instrumentation` and `.module` in same module | Remove the coordinator from the app module |
+| Session Replay not capturing | Missing privacy consent or flag disabled | Ensure `sessionReplay.enabled(true)` and runtime consent is granted |
+
+---
+
+## Skill Installation
+
+- Target client: `${skillsConfig.skillClient.label}`
+- Install scope: `${skillsConfig.skillInstallScope.label}`
+- Output path: `$selectedInstallPath`
+
+| Client | User-level path | Project-level path |
+| --- | --- | --- |
+$installTableRows
+
+---
+
+## Plugin Version Policy
+
+The wizard uses `8.+` as the version constraint, allowing automatic minor and patch updates within the `8.x` major line. Bump the major version manually after reviewing Dynatrace release notes.
+
+---
+
+*Generated by Dynatrace Wizard · $generatedAt*
+""".trimIndent()
+    }
+
+    fun writeSkillsFile(
+        projectInfo: ProjectDetectionService.ProjectInfo,
+        dynatraceConfig: DynatraceConfig,
+        skillsConfig: SkillsExportConfig,
+        sdkLibraryModules: List<ProjectDetectionService.ModuleInfo> = emptyList(),
+        deselectedModules: List<ProjectDetectionService.ModuleInfo> = emptyList()
+    ): String {
+        val outputPath = resolveOutputPath(skillsConfig)
+        val content = generateSkillsMarkdown(projectInfo, dynatraceConfig, skillsConfig, sdkLibraryModules, deselectedModules)
+        val root = resolveWriteRoot(projectInfo, skillsConfig.skillInstallScope)
+            ?: throw IllegalStateException("Could not resolve destination for skills.md export.")
+
+        val relativePath = when (skillsConfig.skillInstallScope) {
+            SkillInstallScope.PROJECT_LEVEL -> outputPath
+            SkillInstallScope.USER_LEVEL -> outputPath.removePrefix("~/")
+        }
+
+        writeTextFile(root, relativePath, content)
+        return outputPath
+    }
+
+    private fun buildSkillId(projectInfo: ProjectDetectionService.ProjectInfo): String {
+        val base = projectInfo.appModuleName.ifBlank { "app" }
+            .lowercase()
+            .replace(Regex("[^a-z0-9._-]"), "-")
+            .trim('-')
+            .ifBlank { "app" }
+        return "com.dynatrace.skill.$base.instrumentation"
+    }
+
+    private fun buildCapabilities(config: DynatraceConfig): List<SkillCapability> {
+        val capabilities = mutableListOf(
+            SkillCapability.CONFIGURE_DYNATRACE_GRADLE,
+            SkillCapability.UPDATE_DYNATRACE_SETTINGS,
+            SkillCapability.EXPORT_SUMMARY_PREVIEW
+        )
+        if (config.crashReporting) capabilities += SkillCapability.ENABLE_CRASH_REPORTING
+        if (config.sessionReplayEnabled) capabilities += SkillCapability.ENABLE_SESSION_REPLAY
+        if (config.userOptIn || config.namePrivacy) capabilities += SkillCapability.ENFORCE_PRIVACY_MODE
+        return capabilities
+    }
+
+    private fun buildPathFor(client: SkillClient, scope: SkillInstallScope): String {
+        val base = when (scope) {
+            SkillInstallScope.USER_LEVEL -> client.userLevelDirectory
+            SkillInstallScope.PROJECT_LEVEL -> client.projectLevelDirectory
+        }
+        val normalizedBase = if (base.endsWith('/')) base else "$base/"
+        return "$normalizedBase$SKILL_SLUG/$SKILL_FILE_NAME"
+    }
+
+    private fun normalizePath(path: String, fallback: String): String {
+        val candidate = path.ifBlank { fallback }
+            .replace('\\', '/')
+            .trim()
+        return when {
+            candidate.isBlank() -> fallback
+            candidate.startsWith("~/") -> candidate
+            else -> candidate.removePrefix("/")
+        }
+    }
+
+    private fun resolveProjectRoot(projectInfo: ProjectDetectionService.ProjectInfo): VirtualFile? {
+        return projectInfo.projectBuildFile?.parent
+            ?: projectInfo.settingsFile?.parent
+            ?: project?.guessProjectDir()
+            ?: projectInfo.appBuildFile?.parent?.parent
+            ?: projectInfo.appBuildFile?.parent
+    }
+
+    private fun resolveWriteRoot(
+        projectInfo: ProjectDetectionService.ProjectInfo,
+        scope: SkillInstallScope
+    ): VirtualFile? = when (scope) {
+        SkillInstallScope.PROJECT_LEVEL -> resolveProjectRoot(projectInfo)
+        SkillInstallScope.USER_LEVEL -> {
+            val userHome = Path.of(System.getProperty("user.home"))
+            LocalFileSystem.getInstance().refreshAndFindFileByNioFile(userHome)
+        }
+    }
+
+    private fun writeTextFile(projectRoot: VirtualFile, relativePath: String, content: String) {
+        val segments = relativePath.split('/').filter { it.isNotBlank() }
+        if (segments.isEmpty()) return
+        val fileName = segments.last()
+        val directorySegments = segments.dropLast(1)
+
+        if (project == null) {
+            throw IllegalStateException("Project instance is required to write skills.md")
+        }
+
+        WriteCommandAction.runWriteCommandAction(project, "Export Skill File", null, {
+            var current = projectRoot
+            directorySegments.forEach { segment ->
+                current = current.findChild(segment) ?: current.createChildDirectory(this, segment)
+            }
+            val file = current.findChild(fileName) ?: current.createChildData(this, fileName)
+            file.setBinaryContent(content.toByteArray(StandardCharsets.UTF_8))
+        })
+    }
+
+    private fun yesNo(value: Boolean): String = if (value) "Enabled" else "Disabled"
+}
