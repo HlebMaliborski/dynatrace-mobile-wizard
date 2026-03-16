@@ -5,6 +5,7 @@ import com.dynatrace.wizard.service.GradleModificationService
 import com.dynatrace.wizard.service.ProjectDetectionService
 import com.dynatrace.wizard.util.DocumentationLinks
 import com.dynatrace.wizard.util.WizardColors
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.ui.TitledSeparator
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
@@ -13,7 +14,9 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.Dimension
 import java.awt.Font
+import java.awt.datatransfer.StringSelection
 import javax.swing.JComponent
+import javax.swing.JButton
 import javax.swing.JTextArea
 
 /**
@@ -24,12 +27,19 @@ class SummaryStep {
 
     private val summaryArea = JTextArea().apply {
         isEditable = false
-        font = Font(Font.MONOSPACED, Font.PLAIN, JBUI.scaleFontSize(12f).toInt())
+        font = Font(Font.MONOSPACED, Font.PLAIN, JBUI.scaleFontSize(12f))
         background = UIUtil.getPanelBackground()
         foreground = UIUtil.getLabelForeground()
         border = JBUI.Borders.empty(8)
         lineWrap = true
         wrapStyleWord = true
+    }
+
+    private val copyPreviewButton = JButton("Copy preview").apply {
+        toolTipText = "Copy the full summary and preview to the clipboard"
+        addActionListener {
+            CopyPasteManager.getInstance().setContents(StringSelection(summaryArea.text))
+        }
     }
 
     fun createPanel(): JComponent {
@@ -56,6 +66,7 @@ class SummaryStep {
                     border = JBUI.Borders.emptyBottom(8)
                 }
             )
+            .addComponent(copyPreviewButton)
             .addComponentFillVertically(scrollArea, 0)
             // ── Documentation ──────────────────────────────────────────────────
             .addComponent(TitledSeparator("Documentation"))
@@ -79,6 +90,35 @@ class SummaryStep {
         deselectedModules: List<ProjectDetectionService.ModuleInfo> = emptyList()
     ) {
         val preview = gradleService.generateChangePreview(projectInfo, config, deselectedModules)
+
+        val selectedAppModules = projectInfo.appModules.map { it.name }
+        val sharedCredentials = config.moduleCredentials.isEmpty()
+        val warnings = buildList {
+            if (!config.pluginEnabled) add("Plugin enabled is turned off, so automatic capture stays configured but inactive until you re-enable it.")
+            if (!config.autoInstrument) add("Auto-instrumentation is disabled. Monitoring toggles and exclusions will be kept, but bytecode-based capture will not run.")
+            if (!config.autoStartEnabled) add("Auto-start is disabled. You will need to add the manual OneAgent startup snippet shown below.")
+            if (config.sessionReplayEnabled) add("Session Replay is enabled. Make sure the target environment and privacy approvals are ready before release.")
+            if (deselectedModules.isNotEmpty()) add("${deselectedModules.size} previously configured app module(s) will have Dynatrace instrumentation removed: ${deselectedModules.joinToString { it.name }}.")
+        }
+
+        val atAGlance = buildString {
+            appendLine("=== At a Glance ===")
+            appendLine()
+            appendLine("Setup flow:                ${projectInfo.setupFlow.title}")
+            appendLine("Instrumentation approach:  ${if (projectInfo.usesPluginDsl) "Plugin DSL at root" else "Buildscript classpath + per-module plugin"}")
+            appendLine("Application modules:       ${if (selectedAppModules.isEmpty()) "None selected" else selectedAppModules.joinToString()}")
+            appendLine("Credential mode:           ${if (sharedCredentials) "Shared app credentials" else "Per-module credentials for ${config.moduleCredentials.size} module(s)"}")
+            appendLine("Library SDK opt-in:        ${if (sdkLibraryModules.isEmpty()) "None" else sdkLibraryModules.joinToString { it.name }}")
+            appendLine("Files likely to change:    root build file${if (selectedAppModules.isNotEmpty() && !projectInfo.usesPluginDsl) ", ${selectedAppModules.size} app module build file(s)" else ""}${if (sdkLibraryModules.isNotEmpty()) ", root SDK helper block" else ""}")
+            appendLine()
+        }
+
+        val warningsSummary = if (warnings.isNotEmpty()) buildString {
+            appendLine("=== Warnings & Follow-up ===")
+            appendLine()
+            warnings.forEach { appendLine("• $it") }
+            appendLine()
+        } else ""
 
         val configSummary = buildString {
             appendLine("=== Configuration Summary ===\n")
@@ -153,7 +193,7 @@ class SummaryStep {
             }
         } else ""
 
-        summaryArea.text = configSummary + preview + sdkPreview + manualStartupSnippet
+        summaryArea.text = atAGlance + warningsSummary + configSummary + preview + sdkPreview + manualStartupSnippet
         summaryArea.caretPosition = 0
     }
 }

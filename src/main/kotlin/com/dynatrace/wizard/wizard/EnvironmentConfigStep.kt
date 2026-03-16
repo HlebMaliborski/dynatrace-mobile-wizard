@@ -28,6 +28,11 @@ import javax.swing.event.DocumentEvent
  */
 class EnvironmentConfigStep {
 
+    private data class ValidationIssue(
+        val message: String,
+        val component: JBTextField
+    )
+
     // ── Shared credential fields (always present) ─────────────────────────────
     private val sharedAppIdField          = JBTextField()
     private val sharedBeaconUrlField      = JBTextField()
@@ -67,6 +72,10 @@ class EnvironmentConfigStep {
     private var builtSharedSection: JComponent? = null
     private var builtPerModuleSection: JComponent? = null
 
+    /** Lightweight context hints shown above the credentials area. */
+    private val modeSummaryLabel = helperLabel()
+    private val scopeSummaryLabel = helperLabel()
+
     // ── Panel construction ────────────────────────────────────────────────────
 
     fun createPanel(appModules: List<ProjectDetectionService.ModuleInfo> = emptyList()): JComponent {
@@ -77,7 +86,7 @@ class EnvironmentConfigStep {
         visibleModuleNames = appModules.map { it.name }.toSet()
 
         // Shared fields defaults + validators
-        sharedAppIdField.emptyText.setText("e.g. com.example.myapp")
+        sharedAppIdField.emptyText.setText("E.g. com.example.myapp")
         sharedBeaconUrlField.text = "https://"
         sharedAppIdField.document.addDocumentListener(object : DocumentAdapter() {
             override fun textChanged(e: DocumentEvent) = updateValidation(
@@ -99,7 +108,7 @@ class EnvironmentConfigStep {
 
         val builder = FormBuilder.createFormBuilder()
             .addComponent(
-                JBLabel("Environment Configuration").apply {
+                JBLabel("Environment configuration").apply {
                     font = JBUI.Fonts.label(16f).asBold()
                     foreground = WizardColors.accent
                     border = JBUI.Borders.emptyBottom(2)
@@ -114,13 +123,15 @@ class EnvironmentConfigStep {
                     border = JBUI.Borders.emptyBottom(4)
                 }
             )
+            .addComponent(modeSummaryLabel)
+            .addComponent(scopeSummaryLabel.apply { border = JBUI.Borders.emptyBottom(4) })
 
         if (isMultiModule) {
             // Build per-module entries
             appModules.forEach { module ->
                 val entry = ModuleEntry(
                     moduleName        = module.name,
-                    appIdField        = JBTextField().also { it.emptyText.setText("e.g. com.example.${module.name}") },
+                    appIdField        = JBTextField().also { it.emptyText.setText("E.g. com.example.${module.name}") },
                     beaconUrlField    = JBTextField().also { it.text = "https://" },
                     appIdErrorLabel   = errorLabel(),
                     beaconUrlErrorLabel = errorLabel(),
@@ -159,6 +170,8 @@ class EnvironmentConfigStep {
             builder.addVerticalGap(8)
         }
 
+        refreshContextHints()
+
         return builder
             .addComponent(credentialContainer)
             .addComponent(TitledSeparator("Documentation"))
@@ -193,6 +206,7 @@ class EnvironmentConfigStep {
         credentialContainer.add(panel, BorderLayout.NORTH)
         credentialContainer.revalidate()
         credentialContainer.repaint()
+        refreshContextHints()
     }
 
     private fun buildSharedSection(): JComponent =
@@ -215,7 +229,7 @@ class EnvironmentConfigStep {
         builder.addComponent(
             JBLabel(
                 "<html>Enter individual credentials for each selected module. " +
-                "Fields left blank fall back to the shared credentials above.</html>"
+                "When you switch into this mode, empty fields are pre-filled from the shared values to speed up setup.</html>"
             ).apply {
                 foreground = UIUtil.getContextHelpForeground()
                 border = JBUI.Borders.emptyBottom(4)
@@ -224,6 +238,14 @@ class EnvironmentConfigStep {
         // Show only modules the user has selected on the Modules tab.
         val entriesToShow = if (visibleModuleNames.isEmpty()) moduleEntries
                             else moduleEntries.filter { it.moduleName in visibleModuleNames }
+        if (entriesToShow.isEmpty()) {
+            builder.addComponent(
+                JBLabel("No application modules are currently selected. Go back to the Modules step and choose at least one module to instrument.").apply {
+                    foreground = UIUtil.getContextHelpForeground()
+                    border = JBUI.Borders.emptyBottom(4)
+                }
+            )
+        }
         entriesToShow.forEach { entry ->
             builder.addComponent(
                 JBLabel("📱  ${entry.moduleName}").apply {
@@ -273,6 +295,11 @@ class EnvironmentConfigStep {
         font = JBUI.Fonts.smallFont()
     }
 
+    private fun helperLabel() = JBLabel("").apply {
+        foreground = UIUtil.getContextHelpForeground()
+        font = JBUI.Fonts.smallFont()
+    }
+
     private fun statusIcon() = JBLabel("").apply {
         border = JBUI.Borders.emptyLeft(4)
     }
@@ -280,20 +307,118 @@ class EnvironmentConfigStep {
     private fun isPerModuleMode(): Boolean =
         perModuleToggle?.isSelected == true && moduleEntries.isNotEmpty()
 
+    private fun visibleEntries(): List<ModuleEntry> =
+        if (visibleModuleNames.isEmpty()) moduleEntries
+        else moduleEntries.filter { it.moduleName in visibleModuleNames }
+
+    private fun refreshContextHints() {
+        val visibleCount = visibleEntries().size
+        val totalCount = moduleEntries.size
+
+        when {
+            totalCount == 0 -> {
+                modeSummaryLabel.text = "One application module will use the shared Dynatrace mobile app credentials below."
+                scopeSummaryLabel.text = "Use the Application ID and Beacon URL from the Dynatrace portal for this app."
+            }
+            isPerModuleMode() && visibleCount == 0 -> {
+                modeSummaryLabel.text = "Per-module mode is enabled, but no application modules are currently selected."
+                scopeSummaryLabel.text = "Go back to the Modules step to select at least one app module."
+            }
+            isPerModuleMode() -> {
+                modeSummaryLabel.text = "Per-module mode is enabled for $visibleCount of $totalCount detected app module(s)."
+                scopeSummaryLabel.text = "Each selected module needs its own Application ID and Beacon URL."
+            }
+            else -> {
+                modeSummaryLabel.text = "Shared mode is enabled — one credential set will be reused for $visibleCount selected app module(s)."
+                scopeSummaryLabel.text = "Switch to per-module mode only if different app modules map to different Dynatrace mobile apps."
+            }
+        }
+    }
+
+    private fun validateRequiredField(
+        text: String,
+        validate: (String) -> ValidationUtil.ValidationResult,
+        blank: (String) -> Boolean,
+        blankMessage: String,
+        error: JBLabel,
+        icon: JBLabel
+    ): String? {
+        if (blank(text)) {
+            error.text = blankMessage
+            icon.text = "❌"
+            return blankMessage
+        }
+        val result = validate(text)
+        error.text = result.errorMessage ?: ""
+        icon.text = if (result.isSuccess) "✅" else "❌"
+        return result.errorMessage
+    }
+
+    private fun findFirstValidationIssue(): ValidationIssue? {
+        if (isPerModuleMode()) {
+            visibleEntries().forEach { entry ->
+                val appIdError = validateRequiredField(
+                    text = entry.appIdField.text,
+                    validate = { ValidationUtil.validateApplicationId(it) },
+                    blank = { it.isBlank() },
+                    blankMessage = "Application ID is required for ${entry.moduleName}.",
+                    error = entry.appIdErrorLabel,
+                    icon = entry.appIdStatusIcon
+                )
+                if (appIdError != null) {
+                    return ValidationIssue("${entry.moduleName}: $appIdError", entry.appIdField)
+                }
+
+                val beaconError = validateRequiredField(
+                    text = entry.beaconUrlField.text,
+                    validate = { ValidationUtil.validateBeaconUrl(it) },
+                    blank = { it.isBlank() || it == "https://" },
+                    blankMessage = "Beacon URL is required for ${entry.moduleName}.",
+                    error = entry.beaconUrlErrorLabel,
+                    icon = entry.beaconUrlStatusIcon
+                )
+                if (beaconError != null) {
+                    return ValidationIssue("${entry.moduleName}: $beaconError", entry.beaconUrlField)
+                }
+            }
+            return null
+        }
+
+        val sharedAppIdError = validateRequiredField(
+            text = sharedAppIdField.text,
+            validate = { ValidationUtil.validateApplicationId(it) },
+            blank = { it.isBlank() },
+            blankMessage = "Application ID is required.",
+            error = sharedAppIdErrorLabel,
+            icon = sharedAppIdStatusIcon
+        )
+        if (sharedAppIdError != null) {
+            return ValidationIssue(sharedAppIdError, sharedAppIdField)
+        }
+
+        val sharedBeaconError = validateRequiredField(
+            text = sharedBeaconUrlField.text,
+            validate = { ValidationUtil.validateBeaconUrl(it) },
+            blank = { it.isBlank() || it == "https://" },
+            blankMessage = "Beacon URL is required.",
+            error = sharedBeaconUrlErrorLabel,
+            icon = sharedBeaconUrlStatusIcon
+        )
+        if (sharedBeaconError != null) {
+            return ValidationIssue(sharedBeaconError, sharedBeaconUrlField)
+        }
+
+        return null
+    }
+
     // ── Public API ────────────────────────────────────────────────────────────
 
-    fun isValid(): Boolean =
-        if (isPerModuleMode()) {
-            val visible = if (visibleModuleNames.isEmpty()) moduleEntries
-                          else moduleEntries.filter { it.moduleName in visibleModuleNames }
-            visible.all { entry ->
-                ValidationUtil.validateApplicationId(entry.appIdField.text).isSuccess &&
-                ValidationUtil.validateBeaconUrl(entry.beaconUrlField.text).isSuccess
-            }
-        } else {
-            ValidationUtil.validateApplicationId(sharedAppIdField.text).isSuccess &&
-            ValidationUtil.validateBeaconUrl(sharedBeaconUrlField.text).isSuccess
-        }
+    fun isValid(): Boolean = findFirstValidationIssue() == null
+
+    fun getValidationMessage(): String? = findFirstValidationIssue()?.message
+
+    fun focusFirstInvalidField(): JComponent? =
+        findFirstValidationIssue()?.component?.also { it.requestFocusInWindow() }
 
     fun getAppId(): String     = sharedAppIdField.text.trim()
     fun getBeaconUrl(): String = sharedBeaconUrlField.text.trim()
@@ -324,6 +449,7 @@ class EnvironmentConfigStep {
             toggle.isSelected = false
             switchCredentialContainer()
         }
+        refreshContextHints()
     }
 
     /**
@@ -345,10 +471,11 @@ class EnvironmentConfigStep {
         // If the per-module panel is currently shown, swap it in immediately.
         if (isPerModuleMode()) {
             credentialContainer.removeAll()
-            credentialContainer.add(builtPerModuleSection, BorderLayout.NORTH)
+            builtPerModuleSection?.let { credentialContainer.add(it, BorderLayout.NORTH) }
             credentialContainer.revalidate()
             credentialContainer.repaint()
         }
+        refreshContextHints()
     }
 
     /** Pre-fills the shared fields with values from an existing configuration. */

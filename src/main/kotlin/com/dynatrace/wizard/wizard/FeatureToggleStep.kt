@@ -59,13 +59,34 @@ class FeatureToggleStep {
     // --- Build variant ---
     val buildVariantField = JBTextField()
 
+    private val instrumentationStatusLabel = JBLabel().apply {
+        font = JBUI.Fonts.smallFont()
+        foreground = UIUtil.getContextHelpForeground()
+    }
+
+    private val autoInstrumentationDependents by lazy {
+        listOf<JComponent>(
+            userActionsCheckBox,
+            webRequestsCheckBox,
+            lifecycleCheckBox,
+            composeEnabledCheckBox,
+            rageTapCheckBox,
+            excludePackagesField,
+            excludeClassesField,
+            excludeMethodsField
+        )
+    }
+
     fun createPanel(): JComponent {
         excludePackagesField.emptyText.setText("e.g. com.example.analytics, com.third.party")
         excludeClassesField.emptyText.setText("e.g. com.example.HeavyClass")
         excludeMethodsField.emptyText.setText("e.g. com.example.Util.expensiveMethod")
         buildVariantField.emptyText.setText("Leave empty or 'all' for all variants")
 
-        return FormBuilder.createFormBuilder()
+        pluginEnabledCheckBox.addActionListener { syncFeatureAvailability() }
+        autoInstrumentCheckBox.addActionListener { syncFeatureAvailability() }
+
+        val panel = FormBuilder.createFormBuilder()
             .addComponent(
                 JBLabel("Feature Configuration").apply {
                     font = JBUI.Fonts.label(16f).asBold()
@@ -79,6 +100,7 @@ class FeatureToggleStep {
                     border = JBUI.Borders.emptyBottom(4)
                 }
             )
+            .addComponent(instrumentationStatusLabel.apply { border = JBUI.Borders.emptyBottom(4) })
             // ── Global ────────────────────────────────────────────────────────
             .addComponent(TitledSeparator("Global"))
             .addComponent(checkboxItem(pluginEnabledCheckBox,
@@ -176,6 +198,9 @@ class FeatureToggleStep {
             .addVerticalGap(8)
             .panel
             .also { it.border = JBUI.Borders.empty(8, 12, 12, 12) }
+
+        syncFeatureAvailability()
+        return panel
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -209,6 +234,23 @@ class FeatureToggleStep {
                 foreground = UIUtil.getContextHelpForeground()
             }, BorderLayout.CENTER)
         }
+
+    private fun syncFeatureAvailability() {
+        val pluginEnabled = pluginEnabledCheckBox.isSelected
+        autoInstrumentCheckBox.isEnabled = pluginEnabled
+
+        val autoInstrumentationActive = pluginEnabled && autoInstrumentCheckBox.isSelected
+        autoInstrumentationDependents.forEach { it.isEnabled = autoInstrumentationActive }
+
+        instrumentationStatusLabel.text = when {
+            !pluginEnabled ->
+                "Plugin setup remains in the generated Gradle files, but automatic capture options are paused until Plugin enabled is turned back on."
+            !autoInstrumentCheckBox.isSelected ->
+                "Auto-instrumentation is turned off. Monitoring toggles and exclusions are kept for later, but they are inactive until auto-instrumentation is re-enabled."
+            else ->
+                "Recommended setup is active: automatic capture is enabled, and the monitoring options below will be applied as selected."
+        }
+    }
 
     // ── Public API ────────────────────────────────────────────────────────────
 
@@ -257,5 +299,6 @@ class FeatureToggleStep {
         excludeClassesField.text                = config.excludeClasses
         excludeMethodsField.text                = config.excludeMethods
         buildVariantField.text                  = if (config.buildVariant == "all") "" else config.buildVariant
+        syncFeatureAvailability()
     }
 }

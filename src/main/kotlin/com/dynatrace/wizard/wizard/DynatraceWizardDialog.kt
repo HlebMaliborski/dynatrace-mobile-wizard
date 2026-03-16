@@ -9,7 +9,6 @@ import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
-import com.intellij.openapi.ui.Messages
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTabbedPane
 import com.intellij.util.ui.JBUI
@@ -33,7 +32,7 @@ import javax.swing.ScrollPaneConstants
 class DynatraceWizardDialog(
     private val project: Project,
     /** Non-null when the user chose "Update Setup" for an already-configured project. */
-    private val existingConfig: DynatraceConfig? = null
+    existingConfig: DynatraceConfig? = null
 ) : DialogWrapper(project) {
 
     private val welcomeStep         = WelcomeStep(project)
@@ -51,11 +50,8 @@ class DynatraceWizardDialog(
     private lateinit var nextAction:  DialogWrapperAction
 
     // Tab index constants
-    private val TAB_WELCOME      = 0
     private val TAB_MODULES      = 1
     private val TAB_ENVIRONMENT  = 2
-    private val TAB_TECHNOLOGIES = 3
-    private val TAB_FEATURES     = 4
     private val TAB_SUMMARY      = 5
 
     init {
@@ -126,6 +122,7 @@ class DynatraceWizardDialog(
         }
 
         tabbedPane.addChangeListener {
+            setErrorText(null)
             if (tabbedPane.selectedIndex == TAB_SUMMARY) {
                 val effectiveInfo = getEffectiveProjectInfo()
                 val deselectedModules = computeDeselectedModules(effectiveInfo)
@@ -205,10 +202,11 @@ class DynatraceWizardDialog(
         return when (idx) {
             TAB_ENVIRONMENT -> {
                 if (!environmentStep.isValid()) {
-                    Messages.showWarningDialog(
-                        project,
-                        "Please fill in a valid Application ID and Beacon URL for all modules before proceeding.",
-                        "Validation Error"
+                    val target = environmentStep.focusFirstInvalidField()
+                    setErrorText(
+                        environmentStep.getValidationMessage()
+                            ?: "Please fill in a valid Application ID and Beacon URL before proceeding.",
+                        target
                     )
                     false
                 } else true
@@ -217,11 +215,9 @@ class DynatraceWizardDialog(
                 if (projectInfo.setupFlow == SetupFlow.MULTI_APP &&
                     !moduleSelectionStep.hasSelection(projectInfo.appModules)
                 ) {
-                    Messages.showWarningDialog(
-                        project,
-                        "Please select at least one application module to instrument.",
-                        "No Module Selected"
-                    )
+                    val target = moduleSelectionStep.getValidationComponent()
+                    setErrorText("Please select at least one application module to instrument.", target)
+                    target?.requestFocusInWindow()
                     false
                 } else true
             }
@@ -232,8 +228,26 @@ class DynatraceWizardDialog(
     // ── OK / Finish ───────────────────────────────────────────────────────────
 
     override fun doOKAction() {
-        if (!validateTab(TAB_ENVIRONMENT)) { tabbedPane.selectedIndex = TAB_ENVIRONMENT; return }
-        if (!validateTab(TAB_MODULES))     { tabbedPane.selectedIndex = TAB_MODULES;     return }
+        if (!environmentStep.isValid()) {
+            tabbedPane.selectedIndex = TAB_ENVIRONMENT
+            val target = environmentStep.focusFirstInvalidField()
+            setErrorText(
+                environmentStep.getValidationMessage()
+                    ?: "Please fill in a valid Application ID and Beacon URL before finishing.",
+                target
+            )
+            return
+        }
+        if (projectInfo.setupFlow == SetupFlow.MULTI_APP &&
+            !moduleSelectionStep.hasSelection(projectInfo.appModules)
+        ) {
+            tabbedPane.selectedIndex = TAB_MODULES
+            val target = moduleSelectionStep.getValidationComponent()
+            setErrorText("Please select at least one application module to instrument.", target)
+            target?.requestFocusInWindow()
+            return
+        }
+        setErrorText(null)
         applyChanges(buildConfig())
         super.doOKAction()
     }
@@ -241,7 +255,7 @@ class DynatraceWizardDialog(
     // ── Config helpers ────────────────────────────────────────────────────────
 
     /**
-     * Returns a [ProjectInfo] where the module list is filtered to only the
+     * Returns a [ProjectDetectionService.ProjectInfo] where the module list is filtered to only the
      * app modules the user chose on the Modules tab.  All other flows return
      * [projectInfo] unchanged.
      */

@@ -29,6 +29,10 @@ class ModuleSelectionStep {
 
     /** Populated only for MULTI_APP projects (one entry per app module). */
     private val appCheckboxes = mutableListOf<Pair<ProjectDetectionService.ModuleInfo, JBCheckBox>>()
+    private val appSelectionSummaryLabel = JBLabel().apply {
+        font = JBUI.Fonts.smallFont()
+        foreground = UIUtil.getContextHelpForeground()
+    }
 
     // ── Multi-app approach toggle ─────────────────────────────────────────────
     private val rbPluginDsl  = JRadioButton("Plugin DSL — coordinator plugin at root instruments all app modules automatically")
@@ -166,7 +170,7 @@ class ModuleSelectionStep {
 
         // ── Header ─────────────────────────────────────────────────────────────
         builder.addComponent(
-            JBLabel("Module Selection").apply {
+            JBLabel("Module selection").apply {
                 font = JBUI.Fonts.label(16f).asBold()
                 foreground = WizardColors.accent
                 border = JBUI.Borders.emptyBottom(2)
@@ -192,6 +196,7 @@ class ModuleSelectionStep {
         var appModulesContainer: JPanel? = null
 
         if (isMultiApp) {
+            builder.addComponent(appSelectionSummaryLabel.apply { border = JBUI.Borders.emptyBottom(4) })
             builder.addComponent(TitledSeparator("Instrumentation Approach"))
 
             // Default: prefer classpath when buildscript{} block exists,
@@ -225,7 +230,9 @@ class ModuleSelectionStep {
             // Always build checkboxes — regardless of which radio is selected initially —
             // so switching approach at runtime always has a populated checkbox list.
             info.appModules.forEach { m ->
-                appCheckboxes += m to JBCheckBox(m.name, true)
+                val checkBox = JBCheckBox(m.name, true)
+                checkBox.addActionListener { updateAppSelectionSummary(info.appModules) }
+                appCheckboxes += m to checkBox
             }
 
             // Build both sub-panels upfront.
@@ -243,13 +250,17 @@ class ModuleSelectionStep {
                 container.add(pluginDslPanel, BorderLayout.NORTH)
                 container.revalidate()
                 container.repaint()
+                updateAppSelectionSummary(info.appModules)
             }
             rbPerModule.addActionListener {
                 container.removeAll()
                 container.add(perModulePanel, BorderLayout.NORTH)
                 container.revalidate()
                 container.repaint()
+                updateAppSelectionSummary(info.appModules)
             }
+
+            updateAppSelectionSummary(info.appModules)
         }
 
         // ── Single-build-file (legacy) ─────────────────────────────────────────
@@ -413,6 +424,9 @@ class ModuleSelectionStep {
     fun getLibraryModulesForSdk(): List<ProjectDetectionService.ModuleInfo> =
         libraryCheckboxes.filter { it.second.isSelected }.map { it.first }
 
+    fun getValidationComponent(): JComponent? =
+        appCheckboxes.firstOrNull()?.second ?: if (rbPerModule.isShowing) rbPerModule else rbPluginDsl
+
     // ── Module list sub-panel builders ────────────────────────────────────────
 
     /** Read-only rows shown when "Plugin DSL" approach is selected. */
@@ -441,6 +455,20 @@ class ModuleSelectionStep {
     /** Checkbox rows shown when "Per-module" approach is selected. */
     private fun buildPerModuleCheckboxesPanel(info: ProjectDetectionService.ProjectInfo): JComponent {
         val b = FormBuilder.createFormBuilder()
+        if (info.appModules.size > 1) {
+            val selectAllCb = JBCheckBox("Select all app modules", true)
+            selectAllCb.addActionListener {
+                appCheckboxes.forEach { (_, cb) -> cb.isSelected = selectAllCb.isSelected }
+                updateAppSelectionSummary(info.appModules)
+            }
+            appCheckboxes.forEach { (_, cb) ->
+                cb.addActionListener {
+                    selectAllCb.isSelected = appCheckboxes.all { it.second.isSelected }
+                }
+            }
+            b.addComponent(selectAllCb)
+            b.addVerticalGap(4)
+        }
         appCheckboxes.forEach { (m, cb) ->
             b.addComponent(checkboxWithHint(
                 cb,
@@ -451,6 +479,26 @@ class ModuleSelectionStep {
             b.addVerticalGap(4)
         }
         return b.panel.also { it.isOpaque = false }
+    }
+
+    private fun updateAppSelectionSummary(allAppModules: List<ProjectDetectionService.ModuleInfo>) {
+        if (allAppModules.isEmpty()) {
+            appSelectionSummaryLabel.text = ""
+            return
+        }
+
+        val selectedCount = getSelectedAppModules(allAppModules).size
+        val totalCount = allAppModules.size
+        appSelectionSummaryLabel.text = when {
+            rbPluginDsl.isSelected ->
+                "Plugin DSL mode will let the root coordinator handle all $totalCount app module(s) automatically."
+            selectedCount == 0 ->
+                "Per-module mode is active, but no app modules are selected yet. Select at least one module to continue."
+            selectedCount == totalCount ->
+                "Per-module mode is active for all $totalCount app module(s). Each selected module will get its own Dynatrace plugin entry."
+            else ->
+                "Per-module mode is active for $selectedCount of $totalCount app module(s). Deselected modules will be left unchanged or cleaned up on re-run."
+        }
     }
 
     // ── UI helpers ────────────────────────────────────────────────────────────
