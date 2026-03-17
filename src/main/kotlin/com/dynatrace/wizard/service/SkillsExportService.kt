@@ -89,6 +89,7 @@ class SkillsExportService(private val project: Project? = null) {
             add("Hybrid WebView monitoring: ${yesNo(dynatraceConfig.hybridMonitoring)}")
             add("Location monitoring: ${yesNo(dynatraceConfig.locationMonitoring)}")
             add("Strict mode: ${yesNo(dynatraceConfig.strictMode)}")
+            if (dynatraceConfig.agentLogging) add("⚠️ Debug agent logging: Enabled (remove before production)")
         }.joinToString("\n") { "- $it" }
 
         val exclusionsSection = buildString {
@@ -248,9 +249,15 @@ Contains the **exact configuration for this project** plus the complete setup re
 
 - User asks to add or reconfigure Dynatrace in this Android project
 - User wants to know the current Application ID, Beacon URL, or enabled features
-- User wants crash reporting, Session Replay, user-action capture, or web-request monitoring
+- User wants crash reporting, ANR reporting, native crash reporting, Session Replay, user-action capture, or web-request monitoring
 - User asks why Dynatrace is not capturing data
 - User wants to update, migrate, or remove Dynatrace Gradle configuration
+- User asks about `enterAction`, `leaveAction`, `DTXAction`, child actions, or custom user actions
+- User asks about `reportValue`, `reportError`, `reportEvent`, or `sendBizEvent`
+- User asks about manual web request instrumentation, `WebRequestTiming`, `getRequestTag`, or WebSocket
+- User asks about hybrid app monitoring, `instrumentWebView`, `withMonitoredDomains`, or `restoreCookies`
+- User asks about `setBeaconHeaders`, `CommunicationProblemListener`, or custom auth headers
+- User wants standalone instrumentation without the Gradle plugin
 $manualStartupSection
 ---
 
@@ -641,6 +648,120 @@ Dynatrace.startup(this, new DynatraceConfigurationBuilder(
     "${dynatraceConfig.applicationId.ifBlank { "<YOUR_APPLICATION_ID>" }}",
     "${dynatraceConfig.beaconUrl.ifBlank { "<YOUR_BEACON_URL>" }}"
 ).buildConfiguration());
+```
+
+---
+
+## OneAgent SDK — Custom User Actions
+
+```kotlin
+// Basic action
+val action: DTXAction = Dynatrace.enterAction("Tap on Search")
+action.leaveAction()                          // end normally
+action.cancel()                               // discard all data (v8.231+)
+val done: Boolean = action.isFinished()       // check state (v8.231+)
+
+// Child action
+val child = Dynatrace.enterAction("Parse result", parentAction)
+child.leaveAction()
+```
+
+Max action name: 250 chars. Max duration: 9 minutes (longer actions are discarded).
+
+---
+
+## OneAgent SDK — Custom Value Reporting
+
+```kotlin
+action.reportEvent("button_tapped")
+action.reportValue("query", searchText)       // String
+action.reportValue("result_count", 42)        // Int
+action.reportValue("latency_ms", 350L)        // Long
+action.reportValue("score", 4.8)              // Double
+action.reportError("network_error", -1)       // error code
+action.reportError("parse_failed", exception) // exception
+
+// Standalone (not tied to any action):
+Dynatrace.reportError("sync_failed", exception)
+```
+
+---
+
+## OneAgent SDK — Business Events (v8.253+)
+
+```kotlin
+Dynatrace.sendBizEvent("com.example.booking-finished", JSONObject().apply {
+    put("event.name", "Confirmed Booking")
+    put("amount", 358.35)
+    put("currency", "USD")
+})
+```
+
+Requires an active monitored session — not sent when OneAgent is disabled.
+
+---
+
+## OneAgent SDK — Manual Web Request Instrumentation
+
+For HTTP libraries not auto-instrumented, or for WebSocket / non-HTTP protocols:
+
+```kotlin
+// Attached to a user action:
+val tag = webAction.getRequestTag()
+val timing = Dynatrace.getWebRequestTiming(tag)
+// Add header: .addHeader(Dynatrace.getRequestTagHeader(), tag)
+timing.startWebRequestTiming()
+timing.stopWebRequestTiming(url, responseCode, responseMessage)
+
+// Standalone (auto-associates with open action if one exists):
+val tag = Dynatrace.getRequestTag()
+
+// WebSocket — use original URI, not OkHttp's (it rewrites wss:// to https://)
+val uri = URI.create("wss://websocket.example.com")
+timing.stopWebRequestTiming(uri, code, reason)   // in onClosing/onFailure
+```
+
+---
+
+## OneAgent SDK — Hybrid App Monitoring
+
+```kotlin
+// 1. Enable in builder:
+DynatraceConfigurationBuilder("<id>", "<url>")
+    .withHybridMonitoring(true)
+    .withMonitoredDomains(".example.com")
+    .buildConfiguration()
+
+// 2. Instrument every WebView BEFORE loadUrl:
+Dynatrace.instrumentWebView(webView)
+webView.loadUrl("https://www.example.com")
+
+// 3. Restore Dynatrace cookies after clearing:
+CookieManager.getInstance().removeAllCookies(null)
+Dynatrace.restoreCookies()
+```
+
+---
+
+## OneAgent SDK — Network & Communication
+
+```kotlin
+// Custom auth headers (set before startup when token is known):
+Dynatrace.setBeaconHeaders(mapOf("Authorization" to "Bearer ${'$'}token"))
+Dynatrace.startup(this, ...)
+
+// Token refresh on 4xx — use CommunicationProblemListener:
+DynatraceConfigurationBuilder("<id>", "<url>")
+    .withCommunicationProblemListener(object : CommunicationProblemListener {
+        override fun onFailure(code: Int, message: String, body: String) {
+            Dynatrace.setBeaconHeaders(mapOf("Authorization" to "Bearer ${'$'}{refreshToken()}"))
+        }
+        override fun onError(t: Throwable) { /* network error — OneAgent retries automatically */ }
+    })
+    .buildConfiguration()
+
+// Remove headers:
+Dynatrace.setBeaconHeaders(null)
 ```
 
 ---

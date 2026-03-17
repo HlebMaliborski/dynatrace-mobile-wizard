@@ -2,12 +2,13 @@
 name: dynatrace-android-sdk
 description: >
   Complete reference for configuring the Dynatrace Mobile SDK in Android projects via the
-  Dynatrace Gradle plugin. Covers Plugin DSL and Buildscript Classpath approaches, single-app,
-  feature-module, and multi-app project layouts, Kotlin DSL and Groovy DSL, all supported
-  monitoring features, privacy and data collection, app performance monitoring, web request
-  monitoring, error and crash reporting, custom events, and user/session management.
-  Use whenever a user asks to add Dynatrace to Android, configure mobile instrumentation,
-  enable crash reporting, ANR reporting, Session Replay, or privacy-aware monitoring.
+  Dynatrace Gradle plugin and OneAgent SDK. Covers Plugin DSL and Buildscript Classpath
+  approaches, single-app, feature-module, and multi-app project layouts, Kotlin DSL and
+  Groovy DSL, all supported monitoring features, privacy and data collection, app performance
+  monitoring, web request monitoring, error and crash reporting, custom events, user/session
+  management, custom user actions, business events, manual web request instrumentation,
+  hybrid WebView monitoring, network/communication configuration, and standalone manual
+  instrumentation without the Gradle plugin.
 license: Apache-2.0
 category: sdk-setup
 generated-by: dynatrace-wizard
@@ -33,6 +34,14 @@ This skill teaches you how to configure the [Dynatrace Gradle plugin](https://do
 - User asks about W3C Trace Context, distributed tracing, `OkHttpEventModifier`, or `HttpRequestEventData`
 - User asks about `ExceptionEventData`, custom events, `EventData`, `EventModifier`, or session properties
 - User asks about `identifyUser`, `SessionPropertyEventData`, or user tagging
+- User asks about `Dynatrace.enterAction`, `leaveAction`, `DTXAction`, child actions, or custom user actions
+- User asks about `reportEvent`, `reportValue`, `reportError`, or `sendBizEvent`
+- User asks about `WebRequestTiming`, `getRequestTag`, manual web request instrumentation, or WebSocket monitoring
+- User asks about hybrid app monitoring, `instrumentWebView`, `withMonitoredDomains`, or `withHybridMonitoring`
+- User asks about `setBeaconHeaders`, `CommunicationProblemListener`, certificate pinning, or custom auth headers
+- User wants to instrument without the Gradle plugin (standalone manual instrumentation)
+- User asks about `DynatraceConfigurationBuilder` options, `withCrashReporting`, `withUserOptIn`, `withActivityMonitoring`
+- User asks about `Dynatrace.endVisit` or forcing a session to end
 
 ---
 
@@ -384,6 +393,68 @@ The `dynatrace { }` block supports the options below. Only add the keys that dif
 | `startupLoadBalancing(true)` | `false` | Client-side ActiveGate load balancing at agent startup |
 | `startupWithGrailEnabled(true)` | `false` | New RUM Experience / Grail data pipeline |
 
+#### `debug { }` block ⚠ NOT for production
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `agentLogging(true)` | `false` | Write verbose OneAgent output to Android Logcat (filter tag: `dtx\|caa`). **Remove before Play Store / release builds.** |
+
+> Do not enable debug logging in production applications. Extra logging may slow down the app and expose sensitive data in device logs.
+
+**Kotlin DSL:**
+```kotlin
+dynatrace {
+    configurations {
+        create("sampleConfig") {
+            variantFilter(".*")
+            autoStart {
+                applicationId("<YOUR_APPLICATION_ID>")
+                beaconUrl("<YOUR_BEACON_URL>")
+            }
+            debug {
+                agentLogging(true)
+            }
+        }
+    }
+}
+```
+
+**Groovy:**
+```groovy
+dynatrace {
+    configurations {
+        sampleConfig {
+            variantFilter '.*'
+            autoStart {
+                applicationId '<YOUR_APPLICATION_ID>'
+                beaconUrl '<YOUR_BEACON_URL>'
+            }
+            debug {
+                agentLogging true
+            }
+        }
+    }
+}
+```
+
+**Via OneAgent SDK** (alternative — no Gradle plugin required):
+
+```kotlin
+// Kotlin
+Dynatrace.startup(this, DynatraceConfigurationBuilder(
+    "<YourApplicationID>", "<ProvidedBeaconURL>"
+).withDebugLogging(true).buildConfiguration())
+```
+
+```java
+// Java
+Dynatrace.startup(this, new DynatraceConfigurationBuilder(
+    "<YourApplicationID>", "<ProvidedBeaconURL>"
+).withDebugLogging(true).buildConfiguration());
+```
+
+Retrieve logs via **Logcat** (Android Studio → View → Tool Windows → Logcat) and filter by tag `dtx|caa`.
+
 #### `exclude { }` block
 
 | Option | Example | Description |
@@ -436,6 +507,47 @@ dynatrace {
 }
 ```
 
+**Groovy:**
+```groovy
+dynatrace {
+    strictMode false
+    configurations {
+        releaseConfig {
+            variantFilter 'release'
+            autoStart {
+                applicationId 'ABCD1234'
+                beaconUrl 'https://tenant.live.dynatrace.com/mbeacon'
+                userOptIn true
+            }
+            userActions {
+                namePrivacy true
+                composeEnabled false
+            }
+            webRequests { enabled false }
+            lifecycle { enabled false }
+            crashReporting false
+            anrReporting false
+            nativeCrashReporting false
+            hybridMonitoring true
+            locationMonitoring true
+            sessionReplay.enabled true
+            behavioralEvents {
+                detectRageTaps true
+            }
+            agentBehavior {
+                startupLoadBalancing true
+                startupWithGrailEnabled true
+            }
+            exclude {
+                packages 'com.example.analytics', 'com.example.legacy'
+                classes 'com.example.HeavyProcessor'
+                methods 'com.example.Util.expensiveMethod'
+            }
+        }
+    }
+}
+```
+
 ---
 
 ## Multi-Module Project Patterns
@@ -479,6 +591,25 @@ dynatrace {
 }
 ```
 
+**Root `build.gradle` (Groovy):**
+```groovy
+plugins {
+    id 'com.dynatrace.instrumentation' version '8.+'
+}
+
+dynatrace {
+    configurations {
+        sampleConfig {
+            variantFilter '.*'
+            autoStart {
+                applicationId 'SHARED_APP_ID'
+                beaconUrl 'https://tenant.live.dynatrace.com/mbeacon'
+            }
+        }
+    }
+}
+```
+
 #### Option B — Per-Module Buildscript Classpath
 
 Add classpath to root; apply `com.dynatrace.instrumentation.module` individually in each app module. Use this when different app modules need different Application IDs or Beacon URLs.
@@ -488,6 +619,15 @@ Add classpath to root; apply `com.dynatrace.instrumentation.module` individually
 buildscript {
     dependencies {
         classpath("com.dynatrace.tools.android:gradle-plugin:8.+")
+    }
+}
+```
+
+**Root `build.gradle` (Groovy):**
+```groovy
+buildscript {
+    dependencies {
+        classpath 'com.dynatrace.tools.android:gradle-plugin:8.+'
     }
 }
 ```
@@ -506,6 +646,26 @@ dynatrace {
             autoStart {
                 applicationId("MODULE_SPECIFIC_APP_ID")
                 beaconUrl("https://tenant.live.dynatrace.com/mbeacon")
+            }
+        }
+    }
+}
+```
+
+**Each app module `build.gradle` (Groovy):**
+```groovy
+plugins {
+    id 'com.android.application'
+    id 'com.dynatrace.instrumentation.module'
+}
+
+dynatrace {
+    configurations {
+        sampleConfig {
+            variantFilter '.*'
+            autoStart {
+                applicationId 'MODULE_SPECIFIC_APP_ID'
+                beaconUrl 'https://tenant.live.dynatrace.com/mbeacon'
             }
         }
     }
@@ -531,13 +691,37 @@ subprojects {
 }
 ```
 
-**Specific library modules only:**
+**All library modules (Groovy):**
+```groovy
+subprojects {
+    pluginManager.withPlugin('com.android.library') {
+        dependencies {
+            implementation com.dynatrace.tools.android.DynatracePlugin.agentDependency()
+        }
+    }
+}
+```
+
+**Specific library modules only (Kotlin DSL):**
 ```kotlin
 subprojects { project ->
     pluginManager.withPlugin("com.android.library") {
         if (project.name == "lib-analytics" || project.name == "lib-network") {
             dependencies {
                 add("implementation", com.dynatrace.tools.android.DynatracePlugin.agentDependency())
+            }
+        }
+    }
+}
+```
+
+**Specific library modules only (Groovy):**
+```groovy
+subprojects { project ->
+    pluginManager.withPlugin('com.android.library') {
+        if (project.name == 'lib-analytics' || project.name == 'lib-network') {
+            dependencies {
+                implementation com.dynatrace.tools.android.DynatracePlugin.agentDependency()
             }
         }
     }
@@ -581,7 +765,587 @@ Dynatrace.startup(this, new DynatraceConfigurationBuilder(
 
 ---
 
-## Privacy & Data Collection
+## Standalone Manual Instrumentation (No Gradle Plugin)
+
+Use this approach when you cannot use the Dynatrace Android Gradle plugin (e.g. technical limitations with the build system).
+
+### Step 1 — Add the OneAgent dependency
+
+```kotlin
+// Kotlin DSL — app/build.gradle.kts
+dependencies {
+    implementation("com.dynatrace.agent:agent-android:8.+")
+}
+```
+
+```groovy
+// Groovy — app/build.gradle
+dependencies {
+    implementation 'com.dynatrace.agent:agent-android:8.+'
+}
+```
+
+For multi-module projects with feature modules, add it as `api` in the base app module so feature modules can access the SDK.
+
+### Step 2 — Start OneAgent manually
+
+```kotlin
+// Kotlin
+class YourApplication : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        Dynatrace.startup(this, DynatraceConfigurationBuilder(
+            "<YourApplicationID>",
+            "<ProvidedBeaconUrl>"
+        ).buildConfiguration())
+    }
+}
+```
+
+```java
+// Java
+public class YourApplication extends Application {
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        Dynatrace.startup(this, new DynatraceConfigurationBuilder(
+            "<YourApplicationID>",
+            "<ProvidedBeaconUrl>"
+        ).buildConfiguration());
+    }
+}
+```
+
+When auto-instrumentation is **also** active, disable the injected auto-start first with `autoStart { enabled(false) }` in the DSL — otherwise the injected call runs before yours and your configuration is ignored.
+
+---
+
+## DynatraceConfigurationBuilder Reference
+
+Key builder methods (chained before `.buildConfiguration()`):
+
+| Method | Default | Description |
+| --- | --- | --- |
+| `.withUserOptIn(true)` | `false` | Enable user consent / opt-in mode |
+| `.withCrashReporting(false)` | `true` | Disable crash reporting |
+| `.withAnrReporting(false)` | `true` | Disable ANR reporting (Android 11+) |
+| `.withNativeCrashReporting(false)` | `true` | Disable NDK crash reporting (Android 11+) |
+| `.withActivityMonitoring(false)` | `true` | Disable Activity lifecycle monitoring |
+| `.withHybridMonitoring(true)` | `false` | Enable WebView hybrid monitoring |
+| `.withStartupLoadBalancing(true)` | `false` | Client-side ActiveGate load balancing |
+| `.withMonitoredDomains(".<domain>")` | — | Domains for hybrid cookie injection |
+| `.withMonitoredHttpsDomains("https://.<domain>")` | — | Same but adds Secure cookie flag (v8.237+) |
+| `.fileDomainCookies(false)` | `true` | Disable cookies for `file://` domains (v8.271+) |
+| `.withCommunicationProblemListener(listener)` | — | Token-refresh callback |
+
+---
+
+## Custom User Actions
+
+Custom actions let you measure time spans around meaningful user interactions and attach additional data.
+
+```kotlin
+// Kotlin
+val action: DTXAction = Dynatrace.enterAction("Tap on Search")
+// ... do work ...
+action.leaveAction()
+```
+
+```java
+// Java
+DTXAction action = Dynatrace.enterAction("Tap on Search");
+// ... do work ...
+action.leaveAction();
+```
+
+- Maximum action name length: 250 characters
+- Maximum action duration: 9 minutes (actions open longer are discarded)
+
+### Child Actions
+
+```kotlin
+// Kotlin
+val parentAction = Dynatrace.enterAction("Tap on Search")
+val childAction = Dynatrace.enterAction("Parse result", parentAction)
+childAction.leaveAction()
+parentAction.leaveAction() // closing parent also closes any open children
+```
+
+```java
+// Java
+DTXAction parentAction = Dynatrace.enterAction("Tap on Search");
+DTXAction childAction = Dynatrace.enterAction("Parse result", parentAction);
+childAction.leaveAction();
+parentAction.leaveAction();
+```
+
+Up to 9 levels of nesting are supported.
+
+### Cancel an Action (v8.231+)
+
+Cancelling discards all data associated with the action (reported values, child actions).
+
+```kotlin
+// Kotlin
+val action = Dynatrace.enterAction("Tap on Purchase")
+try {
+    performWork()
+    action.leaveAction()          // success — data is kept and sent
+} catch (e: Exception) {
+    action.cancel()               // failure — all data is discarded
+}
+```
+
+```java
+// Java
+DTXAction action = Dynatrace.enterAction("Tap on Purchase");
+try {
+    performWork();
+    action.leaveAction();
+} catch (Exception e) {
+    action.cancel();
+}
+```
+
+### Check Action State (v8.231+)
+
+```kotlin
+// Kotlin
+if (!action.isFinished()) {
+    action.reportValue("step", "payment")
+}
+```
+
+```java
+// Java
+if (!action.isFinished()) {
+    action.reportValue("step", "payment");
+}
+```
+
+An action is finished after `leaveAction()`, `cancel()`, or termination by OneAgent.
+
+---
+
+## Custom Value Reporting
+
+All reporting methods work on an open `DTXAction`. Values appear in the waterfall analysis for that action.
+
+### Report an Event
+
+```kotlin
+// Kotlin
+action.reportEvent("button_tapped")
+```
+
+```java
+// Java
+action.reportEvent("button_tapped");
+```
+
+### Report Values
+
+```kotlin
+// Kotlin
+action.reportValue("query", searchText)          // String
+action.reportValue("result_count", 42)           // Int
+action.reportValue("latency_ms", 350L)           // Long
+action.reportValue("score", 4.8)                 // Double
+```
+
+```java
+// Java
+action.reportValue("query", searchText);         // String
+action.reportValue("result_count", 42);          // int
+action.reportValue("latency_ms", 350L);          // long
+action.reportValue("score", 4.8);               // double
+```
+
+### Report Errors
+
+```kotlin
+// Kotlin
+// Error code (attached to action)
+action.reportError("network_error", -1)
+
+// Exception (attached to action)
+action.reportError("parse_failed", exception)
+
+// Standalone errors (not tied to an action)
+Dynatrace.reportError("background_sync_failed", -2)
+Dynatrace.reportError("unhandled_state", exception)
+```
+
+```java
+// Java
+action.reportError("network_error", -1);
+action.reportError("parse_failed", exception);
+Dynatrace.reportError("background_sync_failed", -2);
+Dynatrace.reportError("unhandled_state", exception);
+```
+
+---
+
+## Business Events (v8.253+)
+
+Business events are standalone events sent separately from user actions or sessions. They require an active monitored session — if OneAgent is disabled, business events are not reported.
+
+```kotlin
+// Kotlin
+import org.json.JSONObject
+
+val attributes = JSONObject().apply {
+    put("event.name", "Confirmed Booking")
+    put("product", "Danube Anna Hotel")
+    put("amount", 358.35)
+    put("currency", "USD")
+    put("arrivalDate", "2022-11-05")
+    put("departureDate", "2022-11-15")
+    put("journeyDuration", 10)
+    put("adultTravelers", 2)
+}
+
+Dynatrace.sendBizEvent("com.easytravel.funnel.booking-finished", attributes)
+```
+
+```java
+// Java
+import org.json.JSONObject;
+
+JSONObject attributes = new JSONObject();
+try {
+    attributes.put("event.name", "Confirmed Booking");
+    attributes.put("product", "Danube Anna Hotel");
+    attributes.put("amount", 358.35);
+    attributes.put("currency", "USD");
+    attributes.put("arrivalDate", "2022-11-05");
+    attributes.put("departureDate", "2022-11-15");
+    attributes.put("journeyDuration", 10);
+    attributes.put("adultTravelers", 2);
+} catch (JSONException e) { /* ignore */ }
+
+Dynatrace.sendBizEvent("com.easytravel.funnel.booking-finished", attributes);
+```
+
+---
+
+## Manual Web Request Instrumentation (SDK)
+
+Use this when your HTTP library is not auto-instrumented, or when you need to instrument non-HTTP protocols.
+
+> For auto-instrumented frameworks (HttpURLConnection, OkHttp), do **not** combine automatic and manual instrumentation.
+
+### Attach a Web Request to a User Action
+
+```kotlin
+// Kotlin
+val url = URL("https://api.example.com/search")
+val webAction = Dynatrace.enterAction("Search request")
+val tag = webAction.getRequestTag()
+val timing = Dynatrace.getWebRequestTiming(tag)
+
+val request = Request.Builder()
+    .url(url)
+    .addHeader(Dynatrace.getRequestTagHeader(), tag)
+    .build()
+
+timing.startWebRequestTiming()
+try {
+    val response = client.newCall(request).execute()
+    timing.stopWebRequestTiming(url, response.code, response.message)
+} catch (e: IOException) {
+    timing.stopWebRequestTiming(url, -1, e.toString())
+} finally {
+    webAction.leaveAction()
+}
+```
+
+```java
+// Java
+URL url = new URL("https://api.example.com/search");
+DTXAction webAction = Dynatrace.enterAction("Search request");
+String tag = webAction.getRequestTag();
+WebRequestTiming timing = Dynatrace.getWebRequestTiming(tag);
+
+Request request = new Request.Builder()
+    .url(url)
+    .addHeader(Dynatrace.getRequestTagHeader(), tag)
+    .build();
+
+timing.startWebRequestTiming();
+try {
+    Response response = client.newCall(request).execute();
+    timing.stopWebRequestTiming(url, response.code(), response.message());
+} catch (IOException e) {
+    timing.stopWebRequestTiming(url, -1, e.toString());
+} finally {
+    webAction.leaveAction();
+}
+```
+
+### Standalone Web Request (no parent action)
+
+```kotlin
+// Kotlin
+val tag = Dynatrace.getRequestTag()          // not tied to any action
+val timing = Dynatrace.getWebRequestTiming(tag)
+// ... attach header, start/stop timing the same way ...
+```
+
+```java
+// Java
+String tag = Dynatrace.getRequestTag();
+WebRequestTiming timing = Dynatrace.getWebRequestTiming(tag);
+// ... attach header, start/stop timing the same way ...
+```
+
+### WebSocket / Non-HTTP Requests (v8.249+)
+
+> Pass the **original URI** — do not retrieve it from the OkHttp object (it rewrites `wss://` to `https://`).
+
+```kotlin
+// Kotlin
+val uri = URI.create("wss://websocket.example.com")
+val wsAction = Dynatrace.enterAction("WebSocket")
+val timing = Dynatrace.getWebRequestTiming(wsAction.getRequestTag())
+
+val request = Request.Builder().url(uri.toString()).build()
+timing.startWebRequestTiming()
+
+client.newWebSocket(request, object : WebSocketListener() {
+    override fun onClosing(ws: WebSocket, code: Int, reason: String) {
+        timing.stopWebRequestTiming(uri, code, reason)
+        wsAction.leaveAction()
+    }
+    override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+        timing.stopWebRequestTiming(uri, 1011, "ERROR")
+        wsAction.leaveAction()
+    }
+})
+```
+
+```java
+// Java
+URI uri = URI.create("wss://websocket.example.com");
+DTXAction wsAction = Dynatrace.enterAction("WebSocket");
+WebRequestTiming timing = Dynatrace.getWebRequestTiming(wsAction.getRequestTag());
+
+Request request = new Request.Builder().url(uri.toString()).build();
+timing.startWebRequestTiming();
+
+client.newWebSocket(request, new WebSocketListener() {
+    @Override
+    public void onClosing(WebSocket ws, int code, String reason) {
+        timing.stopWebRequestTiming(uri, code, reason);
+        wsAction.leaveAction();
+    }
+    @Override
+    public void onFailure(WebSocket ws, Throwable t, Response response) {
+        timing.stopWebRequestTiming(uri, 1011, "ERROR");
+        wsAction.leaveAction();
+    }
+});
+```
+
+WebSocket connections must close within ~9 minutes or they may not be reported.
+
+---
+
+## Hybrid App Monitoring (WebView)
+
+### Enable in DynatraceConfigurationBuilder
+
+```kotlin
+// Kotlin
+DynatraceConfigurationBuilder("<id>", "<url>")
+    .withHybridMonitoring(true)
+    .withMonitoredDomains(".example.com", ".api.example.com")
+    .buildConfiguration()
+
+// Or with Secure cookie flag (v8.237+):
+DynatraceConfigurationBuilder("<id>", "<url>")
+    .withHybridMonitoring(true)
+    .withMonitoredHttpsDomains("https://.example.com")
+    .buildConfiguration()
+```
+
+```java
+// Java
+new DynatraceConfigurationBuilder("<id>", "<url>")
+    .withHybridMonitoring(true)
+    .withMonitoredDomains(".example.com", ".api.example.com")
+    .buildConfiguration();
+
+// Or with Secure cookie flag (v8.237+):
+new DynatraceConfigurationBuilder("<id>", "<url>")
+    .withHybridMonitoring(true)
+    .withMonitoredHttpsDomains("https://.example.com")
+    .buildConfiguration();
+```
+
+Domain names must start with a period (`.`).
+
+### Instrument Every WebView
+
+Call `instrumentWebView` **before** `loadUrl`:
+
+```kotlin
+// Kotlin
+val webView = findViewById<WebView>(R.id.webview)
+Dynatrace.instrumentWebView(webView)  // must come before loadUrl
+webView.loadUrl("https://www.example.com")
+```
+
+```java
+// Java
+WebView webView = findViewById(R.id.webview);
+Dynatrace.instrumentWebView(webView);   // must come before loadUrl
+webView.loadUrl("https://www.example.com");
+```
+
+### Preserve Dynatrace Cookies
+
+When clearing cookies, restore Dynatrace cookies immediately after:
+
+```kotlin
+// Kotlin
+CookieManager.getInstance().removeAllCookies(null)
+Dynatrace.restoreCookies()   // must be called after clearing cookies
+```
+
+```java
+// Java
+CookieManager.getInstance().removeAllCookies(null);
+Dynatrace.restoreCookies();
+```
+
+### Disable file:// Domain Cookies (v8.271+)
+
+```kotlin
+// Kotlin
+DynatraceConfigurationBuilder("<id>", "<url>")
+    .withHybridMonitoring(true)
+    .fileDomainCookies(false)
+    .buildConfiguration()
+```
+
+```java
+// Java
+new DynatraceConfigurationBuilder("<id>", "<url>")
+    .withHybridMonitoring(true)
+    .fileDomainCookies(false)
+    .buildConfiguration();
+```
+
+---
+
+## Network & Communication Configuration
+
+### Custom Beacon Headers (Authorization, Cookies)
+
+Set headers **before** `Dynatrace.startup` when the token is known at startup:
+
+```kotlin
+// Kotlin
+Dynatrace.setBeaconHeaders(mapOf(
+    "Authorization" to "Basic $encodedCredentials",
+    "Cookie" to "session=abc123"
+))
+
+Dynatrace.startup(this, DynatraceConfigurationBuilder("<id>", "<url>")
+    .buildConfiguration())
+```
+
+```java
+// Java
+Map<String, String> headers = new HashMap<>();
+headers.put("Authorization", "Basic " + encodedCredentials);
+headers.put("Cookie", "session=abc123");
+Dynatrace.setBeaconHeaders(headers);
+
+Dynatrace.startup(this, new DynatraceConfigurationBuilder("<id>", "<url>")
+    .buildConfiguration());
+```
+
+To remove all custom headers: `Dynatrace.setBeaconHeaders(null)`
+
+### Token Refresh with CommunicationProblemListener
+
+Use when the auth token expires and needs to be refreshed at runtime:
+
+```kotlin
+// Kotlin
+Dynatrace.startup(this, DynatraceConfigurationBuilder("<id>", "<url>")
+    .withCommunicationProblemListener(object : CommunicationProblemListener {
+        override fun onFailure(responseCode: Int, responseMessage: String, body: String) {
+            // Called when the server returns an error (e.g. 403 Forbidden)
+            val newToken = refreshToken()
+            Dynatrace.setBeaconHeaders(mapOf("Authorization" to "Bearer $newToken"))
+        }
+        override fun onError(throwable: Throwable) {
+            // Network-level errors (timeout, SSL) — OneAgent retries automatically
+        }
+    })
+    .buildConfiguration())
+```
+
+```java
+// Java
+Dynatrace.startup(this, new DynatraceConfigurationBuilder("<id>", "<url>")
+    .withCommunicationProblemListener(new CommunicationProblemListener() {
+        @Override
+        public void onFailure(int responseCode, String responseMessage, String body) {
+            String newToken = refreshToken();
+            Map<String, String> headers = new HashMap<>();
+            headers.put("Authorization", "Bearer " + newToken);
+            Dynatrace.setBeaconHeaders(headers);
+        }
+        @Override
+        public void onError(Throwable throwable) {
+            // Network-level errors — OneAgent retries automatically
+        }
+    })
+    .buildConfiguration());
+```
+
+When `CommunicationProblemListener` is set, OneAgent waits for `setBeaconHeaders` instead of retrying automatically on 4xx responses.
+
+### Network Security (HTTPS / Certificates)
+
+For clusters with self-signed or private CA certificates, add a `domain-config` to `network_security_config.xml`:
+
+```xml
+<domain-config>
+  <domain includeSubdomains="true">your.cluster.domain.com</domain>
+  <trust-anchors>
+    <certificates src="@raw/your_server_certificate" />
+  </trust-anchors>
+</domain-config>
+```
+
+Ensure `GET` and `POST` to the `beaconUrl` endpoint are not blocked by a firewall.
+
+---
+
+## Session Management
+
+### Force-End a Session
+
+```kotlin
+// Kotlin — ends current session, closes all open actions, starts a new session
+Dynatrace.endVisit()
+```
+
+```java
+// Java
+Dynatrace.endVisit();
+```
+
+> After `endVisit`, sessions are **not** re-tagged automatically. Call `identifyUser()` again in the new session if needed.
+
+OneAgent also ends sessions automatically on: idle timeout, duration timeout, privacy changes, or app force-stop. Sessions split by timeout re-tag automatically (v8.237+).
+
+---
 
 ### Data Collection Levels
 
@@ -598,6 +1362,7 @@ When `userOptIn(true)` is configured and the user has not yet consented, default
 ### Set Data Collection Level at Runtime
 
 ```kotlin
+// Kotlin
 import com.dynatrace.android.agent.Dynatrace
 import com.dynatrace.android.agent.conf.UserPrivacyOptions
 import com.dynatrace.android.agent.conf.DataCollectionLevel
@@ -609,24 +1374,51 @@ val updatedOptions = privacyOptions.newBuilder()
 Dynatrace.applyUserPrivacyOptions(updatedOptions)
 ```
 
+```java
+// Java
+UserPrivacyOptions privacyOptions = Dynatrace.getUserPrivacyOptions();
+UserPrivacyOptions updatedOptions = privacyOptions.newBuilder()
+    .withDataCollectionLevel(DataCollectionLevel.PERFORMANCE)
+    .build();
+Dynatrace.applyUserPrivacyOptions(updatedOptions);
+```
+
 ### Enable or Disable Crash Reporting at Runtime
 
 ```kotlin
-val privacyOptions = Dynatrace.getUserPrivacyOptions()
-val updatedOptions = privacyOptions.newBuilder()
+// Kotlin
+val updatedOptions = Dynatrace.getUserPrivacyOptions().newBuilder()
     .withCrashReportingOptedIn(true) // or false to disable
     .build()
 Dynatrace.applyUserPrivacyOptions(updatedOptions)
 ```
 
+```java
+// Java
+UserPrivacyOptions updatedOptions = Dynatrace.getUserPrivacyOptions().newBuilder()
+    .withCrashReportingOptedIn(true)
+    .build();
+Dynatrace.applyUserPrivacyOptions(updatedOptions);
+```
+
 ### Apply Combined Privacy Options
 
 ```kotlin
+// Kotlin
 val updatedOptions = Dynatrace.getUserPrivacyOptions().newBuilder()
     .withDataCollectionLevel(DataCollectionLevel.USER_BEHAVIOR)
     .withCrashReportingOptedIn(false)
     .build()
 Dynatrace.applyUserPrivacyOptions(updatedOptions)
+```
+
+```java
+// Java
+UserPrivacyOptions updatedOptions = Dynatrace.getUserPrivacyOptions().newBuilder()
+    .withDataCollectionLevel(DataCollectionLevel.USER_BEHAVIOR)
+    .withCrashReportingOptedIn(false)
+    .build();
+Dynatrace.applyUserPrivacyOptions(updatedOptions);
 ```
 
 ### User Opt-In Mode (GDPR)
@@ -660,9 +1452,17 @@ dynatrace {
 Enable via manual startup:
 
 ```kotlin
+// Kotlin
 DynatraceConfigurationBuilder("<YourApplicationID>", "<ProvidedBeaconURL>")
     .withUserOptIn(true)
     .buildConfiguration()
+```
+
+```java
+// Java
+new DynatraceConfigurationBuilder("<YourApplicationID>", "<ProvidedBeaconURL>")
+    .withUserOptIn(true)
+    .buildConfiguration();
 ```
 
 **When opt-in is enabled:**
@@ -751,6 +1551,7 @@ When automatic instrumentation is enabled, OneAgent automatically propagates W3C
 For custom networking stacks, use `Dynatrace.generateTraceContext()`:
 
 ```kotlin
+// Kotlin
 val existingTraceparent = request.header("traceparent")
 val existingTracestate = request.header("tracestate")
 
@@ -765,7 +1566,6 @@ if (traceContext != null) {
         .build()
 }
 
-// After executing the request:
 val requestData = HttpRequestEventData(request.url.toString(), request.method)
     .withDuration(duration)
     .withStatusCode(statusCode)
@@ -777,41 +1577,86 @@ if (traceparentForReporting != null) {
 Dynatrace.sendHttpRequestEvent(requestData)
 ```
 
+```java
+// Java
+String existingTraceparent = request.header("traceparent");
+String existingTracestate  = request.header("tracestate");
+
+TraceContext traceContext = Dynatrace.generateTraceContext(existingTraceparent, existingTracestate);
+String traceparentForReporting = traceContext != null ? traceContext.getTraceparent() : null;
+
+if (traceContext != null) {
+    request = request.newBuilder()
+        .header("traceparent", traceContext.getTraceparent())
+        .header("tracestate",  traceContext.getTracestate())
+        .build();
+}
+
+HttpRequestEventData requestData = new HttpRequestEventData(request.url().toString(), request.method())
+    .withDuration(duration)
+    .withStatusCode(statusCode);
+
+if (traceparentForReporting != null) {
+    requestData.withTraceparentHeader(traceparentForReporting);
+}
+
+Dynatrace.sendHttpRequestEvent(requestData);
+```
+
 ### Manual Web Request Reporting
 
 For networking libraries not supported by automatic instrumentation:
 
 ```kotlin
-import com.dynatrace.android.agent.Dynatrace
-import com.dynatrace.android.agent.HttpRequestEventData
-
-// Successful request
+// Kotlin
 val requestData = HttpRequestEventData("https://api.example.com/data", "GET")
-    .withDuration(250)          // Duration in milliseconds
+    .withDuration(250)
     .withStatusCode(200)
     .withBytesSent(128)
     .withBytesReceived(4096)
-
 Dynatrace.sendHttpRequestEvent(requestData)
 
-// Failed request — include the exception
 val failedRequest = HttpRequestEventData("https://api.example.com/data", "POST")
     .withDuration(1500)
     .withThrowable(exception)
-
 Dynatrace.sendHttpRequestEvent(failedRequest)
+```
+
+```java
+// Java
+HttpRequestEventData requestData = new HttpRequestEventData("https://api.example.com/data", "GET")
+    .withDuration(250)
+    .withStatusCode(200)
+    .withBytesSent(128)
+    .withBytesReceived(4096);
+Dynatrace.sendHttpRequestEvent(requestData);
+
+HttpRequestEventData failedRequest = new HttpRequestEventData("https://api.example.com/data", "POST")
+    .withDuration(1500)
+    .withThrowable(exception);
+Dynatrace.sendHttpRequestEvent(failedRequest);
 ```
 
 ### Add Custom Properties to Web Requests
 
 ```kotlin
+// Kotlin
 val requestData = HttpRequestEventData(url, "POST")
     .withDuration(300)
     .withStatusCode(201)
     .addEventProperty("event_properties.api_version", "v2")
     .addEventProperty("event_properties.endpoint", "users")
-
 Dynatrace.sendHttpRequestEvent(requestData)
+```
+
+```java
+// Java
+HttpRequestEventData requestData = new HttpRequestEventData(url, "POST")
+    .withDuration(300)
+    .withStatusCode(201)
+    .addEventProperty("event_properties.api_version", "v2")
+    .addEventProperty("event_properties.endpoint", "users");
+Dynatrace.sendHttpRequestEvent(requestData);
 ```
 
 > Custom property keys **must** be prefixed with `event_properties.` — properties without this prefix are dropped.
@@ -821,46 +1666,77 @@ Dynatrace.sendHttpRequestEvent(requestData)
 Enrich, redact, or filter OkHttp web request events before they are sent:
 
 ```kotlin
+// Kotlin
 val modifier: OkHttpEventModifier = object : OkHttpEventModifier {
     override fun modifyEvent(request: Request, response: Response): JSONObject {
         val event = JSONObject()
         val serverTiming = response.header("Server-Timing")
-        if (serverTiming != null) {
-            event.put("event_properties.server_timing", serverTiming)
-        }
+        if (serverTiming != null) event.put("event_properties.server_timing", serverTiming)
         // Always use peekBody() — never body() — to avoid consuming the response stream
-        val body = response.peekBody(1000)
-        event.put("event_properties.body_preview", body.toString())
+        event.put("event_properties.body_preview", response.peekBody(1000).toString())
         return event
     }
-
     override fun modifyEvent(request: Request, throwable: Throwable): JSONObject {
         val event = JSONObject()
         val customHeader = request.header("X-Custom-Header")
-        if (customHeader != null) {
-            event.put("event_properties.custom_header", customHeader)
-        }
+        if (customHeader != null) event.put("event_properties.custom_header", customHeader)
         return event
     }
 }
-
 Dynatrace.addHttpEventModifier(modifier)
+```
+
+```java
+// Java
+OkHttpEventModifier modifier = new OkHttpEventModifier() {
+    @Override
+    public JSONObject modifyEvent(Request request, Response response) throws JSONException {
+        JSONObject event = new JSONObject();
+        String serverTiming = response.header("Server-Timing");
+        if (serverTiming != null) event.put("event_properties.server_timing", serverTiming);
+        event.put("event_properties.body_preview", response.peekBody(1000).string());
+        return event;
+    }
+    @Override
+    public JSONObject modifyEvent(Request request, Throwable throwable) throws JSONException {
+        JSONObject event = new JSONObject();
+        String customHeader = request.header("X-Custom-Header");
+        if (customHeader != null) event.put("event_properties.custom_header", customHeader);
+        return event;
+    }
+};
+Dynatrace.addHttpEventModifier(modifier);
 ```
 
 **Filter a request** (return `null` to drop the event):
 
 ```kotlin
+// Kotlin
 val filterModifier: OkHttpEventModifier = object : OkHttpEventModifier {
     override fun modifyEvent(request: Request, response: Response?): JSONObject? {
         return if (request.url.toString().contains("analytics.example.com")) null
         else JSONObject()
     }
-
     override fun modifyEvent(request: Request?, throwable: Throwable?): JSONObject? {
         return if (throwable is IOException) JSONObject() else null
     }
 }
 Dynatrace.addHttpEventModifier(filterModifier)
+```
+
+```java
+// Java
+OkHttpEventModifier filterModifier = new OkHttpEventModifier() {
+    @Override
+    public JSONObject modifyEvent(Request request, Response response) {
+        return request.url().toString().contains("analytics.example.com") ? null : new JSONObject();
+    }
+    @Override
+    public JSONObject modifyEvent(Request request, Throwable throwable) {
+        return throwable instanceof IOException ? new JSONObject() : null;
+    }
+};
+Dynatrace.addHttpEventModifier(filterModifier);
 ```
 
 **Remove a modifier:**
@@ -932,10 +1808,18 @@ dynatrace {
 Disable via manual startup:
 
 ```kotlin
+// Kotlin
 Dynatrace.startup(this, DynatraceConfigurationBuilder("<YourApplicationID>", "<ProvidedBeaconUrl>")
     .withAnrReporting(false)
     .buildConfiguration()
 )
+```
+
+```java
+// Java
+Dynatrace.startup(this, new DynatraceConfigurationBuilder("<YourApplicationID>", "<ProvidedBeaconUrl>")
+    .withAnrReporting(false)
+    .buildConfiguration());
 ```
 
 **ANR limitations:**
@@ -974,10 +1858,18 @@ dynatrace {
 Disable via manual startup:
 
 ```kotlin
+// Kotlin
 Dynatrace.startup(this, DynatraceConfigurationBuilder("<YourApplicationID>", "<ProvidedBeaconUrl>")
     .withNativeCrashReporting(false)
     .buildConfiguration()
 )
+```
+
+```java
+// Java
+Dynatrace.startup(this, new DynatraceConfigurationBuilder("<YourApplicationID>", "<ProvidedBeaconUrl>")
+    .withNativeCrashReporting(false)
+    .buildConfiguration());
 ```
 
 **Native crash limitations:**
@@ -990,6 +1882,7 @@ Dynatrace.startup(this, DynatraceConfigurationBuilder("<YourApplicationID>", "<P
 Report handled exceptions with optional custom properties:
 
 ```kotlin
+// Kotlin
 try {
     // ...
 } catch (exception: Exception) {
@@ -997,6 +1890,18 @@ try {
         ExceptionEventData(exception)
             .addEventProperty("event_properties.<YourPropertyName>", "<YourPropertyValue>")
     )
+}
+```
+
+```java
+// Java
+try {
+    // ...
+} catch (Exception exception) {
+    Dynatrace.sendExceptionEvent(
+        new ExceptionEventData(exception)
+            .addEventProperty("event_properties.<YourPropertyName>", "<YourPropertyValue>")
+    );
 }
 ```
 
@@ -1017,13 +1922,9 @@ Before sending event or session properties, define them in the Dynatrace UI:
 ### Send Custom Events
 
 ```kotlin
-// Simple event
+// Kotlin
 Dynatrace.sendEvent(EventData())
-
-// Event with duration (milliseconds)
 Dynatrace.sendEvent(EventData().withDuration(150))
-
-// Event with custom properties
 Dynatrace.sendEvent(
     EventData()
         .withDuration(250)
@@ -1033,6 +1934,19 @@ Dynatrace.sendEvent(
 )
 ```
 
+```java
+// Java
+Dynatrace.sendEvent(new EventData());
+Dynatrace.sendEvent(new EventData().withDuration(150));
+Dynatrace.sendEvent(
+    new EventData()
+        .withDuration(250)
+        .addEventProperty("event_properties.checkout_step", "payment_confirmed")
+        .addEventProperty("event_properties.cart_value", 149.99)
+        .addEventProperty("event_properties.item_count", 3)
+);
+```
+
 ### Event Modifiers
 
 Intercept all events before they are sent to add context, redact PII, or filter events.
@@ -1040,6 +1954,7 @@ Intercept all events before they are sent to add context, redact PII, or filter 
 **Add a modifier:**
 
 ```kotlin
+// Kotlin
 val modifier = EventModifier { event ->
     event.put("event_properties.build_type", BuildConfig.BUILD_TYPE)
     event.put("event_properties.flavor", BuildConfig.FLAVOR)
@@ -1048,9 +1963,20 @@ val modifier = EventModifier { event ->
 Dynatrace.addEventModifier(modifier)
 ```
 
+```java
+// Java
+EventModifier modifier = event -> {
+    event.put("event_properties.build_type", BuildConfig.BUILD_TYPE);
+    event.put("event_properties.flavor", BuildConfig.FLAVOR);
+    return event;
+};
+Dynatrace.addEventModifier(modifier);
+```
+
 **Filter events** (return `null` to discard):
 
 ```kotlin
+// Kotlin
 val modifier = EventModifier { event ->
     if (event.optString("view.detected_name") == "com.example.MainActivity") {
         return@EventModifier null
@@ -1060,23 +1986,45 @@ val modifier = EventModifier { event ->
 Dynatrace.addEventModifier(modifier)
 ```
 
+```java
+// Java
+EventModifier modifier = event -> {
+    if ("com.example.MainActivity".equals(event.optString("view.detected_name"))) return null;
+    return event;
+};
+Dynatrace.addEventModifier(modifier);
+```
+
 **Redact sensitive data:**
 
 ```kotlin
+// Kotlin
 val modifier = EventModifier { event ->
     val url = event.optString("url.full", null)
     if (url != null) {
-        val redactedUrl = url.replace(Regex("/users/\\w+/"), "/users/{id}/")
-        event.put("url.full", redactedUrl)
+        event.put("url.full", url.replace(Regex("/users/\\w+/"), "/users/{id}/"))
     }
     event
 }
 Dynatrace.addEventModifier(modifier)
 ```
 
+```java
+// Java
+EventModifier modifier = event -> {
+    String url = event.optString("url.full", null);
+    if (url != null) {
+        event.put("url.full", url.replaceAll("/users/\\w+/", "/users/{id}/"));
+    }
+    return event;
+};
+Dynatrace.addEventModifier(modifier);
+```
+
 **Conditional enrichment (HTTP and error events only):**
 
 ```kotlin
+// Kotlin
 fun setupConditionalEnrichment(apiClientName: String) {
     val modifier = EventModifier { event ->
         if (event.optBoolean("characteristics.has_request")) {
@@ -1090,6 +2038,24 @@ fun setupConditionalEnrichment(apiClientName: String) {
         event
     }
     Dynatrace.addEventModifier(modifier)
+}
+```
+
+```java
+// Java
+void setupConditionalEnrichment(String apiClientName) {
+    EventModifier modifier = event -> {
+        if (event.optBoolean("characteristics.has_request")) {
+            event.put("event_properties.api_client", apiClientName);
+            event.put("event_properties.api_kind", "backend");
+        }
+        if (event.optBoolean("characteristics.has_error")) {
+            event.put("event_properties.triage_owner", "mobile");
+            event.put("event_properties.triage_severity", "error");
+        }
+        return event;
+    };
+    Dynatrace.addEventModifier(modifier);
 }
 ```
 
@@ -1114,11 +2080,15 @@ Dynatrace.removeEventModifier(modifier)
 Tag the current session with a user identifier to track individuals across sessions and devices:
 
 ```kotlin
-// After user logs in
+// Kotlin
 Dynatrace.identifyUser("user@example.com")
-
-// Or use an internal user ID
 Dynatrace.identifyUser("user-12345")
+```
+
+```java
+// Java
+Dynatrace.identifyUser("user@example.com");
+Dynatrace.identifyUser("user-12345");
 ```
 
 **Important:**
@@ -1129,9 +2099,13 @@ Dynatrace.identifyUser("user-12345")
 **Remove user identification (on logout):**
 
 ```kotlin
-fun logout() {
-    Dynatrace.identifyUser(null)
-}
+// Kotlin
+Dynatrace.identifyUser(null)
+```
+
+```java
+// Java
+Dynatrace.identifyUser(null);
 ```
 
 ### Session Properties
@@ -1139,6 +2113,7 @@ fun logout() {
 Attach key-value pairs that apply to all events in the current session. Properties must be configured in the Dynatrace UI before use — unconfigured properties are dropped.
 
 ```kotlin
+// Kotlin
 Dynatrace.sendSessionPropertyEvent(
     SessionPropertyEventData()
         .addSessionProperty("session_properties.product_tier", "premium")
@@ -1147,20 +2122,38 @@ Dynatrace.sendSessionPropertyEvent(
 )
 ```
 
+```java
+// Java
+Dynatrace.sendSessionPropertyEvent(
+    new SessionPropertyEventData()
+        .addSessionProperty("session_properties.product_tier", "premium")
+        .addSessionProperty("session_properties.loyalty_status", "gold")
+        .addSessionProperty("session_properties.onboarding_complete", true)
+);
+```
+
 **Update session properties during a session:**
 
 ```kotlin
-// Initial value
+// Kotlin — initial value
 Dynatrace.sendSessionPropertyEvent(
-    SessionPropertyEventData()
-        .addSessionProperty("session_properties.cart_value", 0)
+    SessionPropertyEventData().addSessionProperty("session_properties.cart_value", 0)
 )
-
 // Update after user adds items
 Dynatrace.sendSessionPropertyEvent(
-    SessionPropertyEventData()
-        .addSessionProperty("session_properties.cart_value", 149.99)
+    SessionPropertyEventData().addSessionProperty("session_properties.cart_value", 149.99)
 )
+```
+
+```java
+// Java — initial value
+Dynatrace.sendSessionPropertyEvent(
+    new SessionPropertyEventData().addSessionProperty("session_properties.cart_value", 0)
+);
+// Update after user adds items
+Dynatrace.sendSessionPropertyEvent(
+    new SessionPropertyEventData().addSessionProperty("session_properties.cart_value", 149.99)
+);
 ```
 
 > If the same property is sent multiple times, session aggregation keeps only one value (first or last, depending on server configuration).
@@ -1193,13 +2186,17 @@ To cleanly remove Dynatrace:
 ## Limitations
 
 - **HTTP** — Only `HttpURLConnection` and `OkHttp` (v3/4/5) are automatically instrumented; all other HTTP frameworks require manual instrumentation
-- **WebSocket and non-HTTP protocols** — require manual instrumentation
+- **WebSocket and non-HTTP protocols** — require manual instrumentation; connections must close within ~9 minutes
+- **Custom actions** — maximum duration 9 minutes; actions open longer are discarded. Maximum name length 250 characters
+- **Business events** — only captured in active monitored sessions; not sent when OneAgent is disabled
 - **Native code (NDK)** — not instrumented by bytecode transformation
 - **Web components** — `.html`, `.js` files are not instrumented
 - **Android library projects** — auto-instrumentation applies only to application projects; library projects are instrumented when added as a dependency to an app project
 - **ANR and native crash reporting** — available only on Android 11+; app must be restarted within 10 minutes
 - **Events per minute** — default limit is 1,000 events per minute; exceeding this may result in dropped events
 - **Multiple monitoring plugins** — using several monitoring plugins simultaneously can cause compatibility issues; test thoroughly or use only one
+- **Direct Boot** — do not call `Dynatrace.startup` from a Direct Boot aware component
+- **Offline data** — Dynatrace discards monitoring data older than 10 minutes when the app is offline
 
 ---
 
@@ -1219,6 +2216,14 @@ To cleanly remove Dynatrace:
 | Event/session properties dropped | Property not configured in Dynatrace UI, or missing prefix | Define properties in Dynatrace UI first; use `event_properties.` / `session_properties.` prefix |
 | `OkHttpEventModifier` causes exception on response body read | Using `body()` instead of `peekBody()` consumes the response stream | Always use `response.peekBody(n)` inside the modifier |
 | App start duration shorter than expected | Agent started too late in manual startup | Call `Dynatrace.startup()` as early as possible in `Application.onCreate()` |
+| Custom action never appears in Dynatrace | `leaveAction()` not called, or action open > 9 minutes | Always call `leaveAction()` or `cancel()`; actions open longer than 9 minutes are discarded |
+| Manual startup config ignored | Auto-instrumentation injects its own `startup` call first | Add `autoStart { enabled(false) }` in the DSL to prevent the injected call |
+| WebSocket timing not reported | Connection open longer than ~9 minutes | Only WebSocket connections ≤ 9 minutes are reliably reported |
+| WebView hybrid session not merging with native session | `instrumentWebView` called after `loadUrl` | Always call `Dynatrace.instrumentWebView(webView)` **before** `webView.loadUrl(...)` |
+| Hybrid cookies lost after `removeAllCookies` | Dynatrace cookies deleted along with app cookies | Call `Dynatrace.restoreCookies()` immediately after clearing cookies |
+| OneAgent stops sending data after 403 | Server rejects stale auth token, no `CommunicationProblemListener` | Add a `CommunicationProblemListener` and call `setBeaconHeaders` with refreshed token |
+| Business events not appearing | OneAgent disabled (cost control, privacy off) | Business events require an active monitored session |
+| `enterAction` returns an action but no data appears | `reportValue`/`reportError` called on a finished action | Check `action.isFinished()` before reporting; don't interact with finished actions |
 
 ---
 

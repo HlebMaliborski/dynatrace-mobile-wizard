@@ -359,6 +359,7 @@ class DynatraceWizardDialog(
         agentBehaviorLoadBalancing = featureStep.isAgentBehaviorLoadBalancing(),
         agentBehaviorGrail     = featureStep.isAgentBehaviorGrail(),
         sessionReplayEnabled   = featureStep.isSessionReplayEnabled(),
+        agentLogging           = featureStep.isAgentLogging(),
         excludePackages        = featureStep.getExcludePackages(),
         excludeClasses         = featureStep.getExcludeClasses(),
         excludeMethods         = featureStep.getExcludeMethods(),

@@ -19,7 +19,7 @@ import java.nio.charset.StandardCharsets
  *      → classpath entry goes into the project-level buildscript block;
  *        `apply plugin` + dynatrace {} block go into the **app-level** file.
  */
-class GradleModificationService(private val project: Project) {
+class GradleModificationService(private val project: Project?) {
 
     companion object {
         /** Plugin DSL id used in `plugins {}` block and `apply plugin` statements. */
@@ -97,6 +97,11 @@ class GradleModificationService(private val project: Project) {
                     appendLine("            }")
                 }
                 if (config.sessionReplayEnabled) appendLine("            sessionReplay.enabled(true)")
+                if (config.agentLogging) {
+                    appendLine("            debug {")
+                    appendLine("                agentLogging(true)")
+                    appendLine("            }")
+                }
                 val packages = config.excludePackages.split(",").map { it.trim() }.filter { it.isNotBlank() }
                 val classes  = config.excludeClasses.split(",").map { it.trim() }.filter { it.isNotBlank() }
                 val methods  = config.excludeMethods.split(",").map { it.trim() }.filter { it.isNotBlank() }
@@ -158,6 +163,11 @@ class GradleModificationService(private val project: Project) {
                     appendLine("            }")
                 }
                 if (config.sessionReplayEnabled) appendLine("            sessionReplay.enabled true")
+                if (config.agentLogging) {
+                    appendLine("            debug {")
+                    appendLine("                agentLogging true")
+                    appendLine("            }")
+                }
                 val packages = config.excludePackages.split(",").map { it.trim() }.filter { it.isNotBlank() }
                 val classes  = config.excludeClasses.split(",").map { it.trim() }.filter { it.isNotBlank() }
                 val methods  = config.excludeMethods.split(",").map { it.trim() }.filter { it.isNotBlank() }
@@ -630,9 +640,17 @@ class GradleModificationService(private val project: Project) {
         }.toMap()
 
     fun readExistingConfig(file: VirtualFile): DynatraceConfig? {
+        val raw = String(file.contentsToByteArray(), StandardCharsets.UTF_8)
+        return readExistingConfigFromString(raw)
+    }
+
+    /**
+     * Parses a Dynatrace configuration from the raw [gradleContent] string.
+     * Exposed for unit-testing without a real [VirtualFile].
+     */
+    fun readExistingConfigFromString(gradleContent: String): DynatraceConfig? {
         return try {
-            val raw     = String(file.contentsToByteArray(), StandardCharsets.UTF_8)
-            val content = stripComments(raw)   // ignore commented-out declarations
+            val content = stripComments(gradleContent)   // ignore commented-out declarations
             // Recognize both `dynatrace {` and `configure<…DynatraceExtension…> {` as config blocks.
             if (!content.contains("dynatrace {") && !content.contains("DynatraceExtension")) return null
 
@@ -677,6 +695,7 @@ class GradleModificationService(private val project: Project) {
             val agentBehaviorBlock = extractBlock("agentBehavior")
             val behavioralBlock    = extractBlock("behavioralEvents")
             val excludeBlock       = extractBlock("exclude")
+            val debugBlock         = extractBlock("debug")
 
             // Strip sub-blocks so the remaining content only has config-level flags.
             // This lets us isolate the config-level `enabled(false)` that controls autoInstrument.
@@ -718,6 +737,8 @@ class GradleModificationService(private val project: Project) {
                                           || Regex("""agentBehavior\.startupWithGrailEnabled[\s(]*true""").containsMatchIn(content),
                 // Session Replay — dot notation: sessionReplay.enabled(true) / sessionReplay.enabled true
                 sessionReplayEnabled       = Regex("""sessionReplay\.enabled[\s(]*true""").containsMatchIn(content),
+                // Debug logging — debug { agentLogging true/agentLogging(true) }
+                agentLogging               = hasFlagInBlock(debugBlock, "agentLogging", true),
                 // Exclusions
                 excludePackages            = readListValues(excludeBlock, "packages"),
                 excludeClasses             = readListValues(excludeBlock, "classes"),

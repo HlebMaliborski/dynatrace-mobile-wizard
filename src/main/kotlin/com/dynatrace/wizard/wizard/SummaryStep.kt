@@ -71,11 +71,14 @@ class SummaryStep {
             .addComponentFillVertically(scrollArea, 0)
             // ── Documentation ──────────────────────────────────────────────────
             .addComponent(TitledSeparator("Documentation"))
-            .addComponent(DocumentationLinks.createLinkLabel("Instrumentation via Plugin", DocumentationLinks.GETTING_STARTED))
-            .addComponent(DocumentationLinks.createLinkLabel("Configure Plugin for Instrumentation", DocumentationLinks.CONFIGURE_PLUGIN))
-            .addComponent(DocumentationLinks.createLinkLabel("Monitoring Capabilities", DocumentationLinks.MONITORING_CAPABILITIES))
-            .addComponent(DocumentationLinks.createLinkLabel("Adjust OneAgent Configuration", DocumentationLinks.ADJUST_ONEAGENT))
-            .addComponent(DocumentationLinks.createLinkLabel("Release Notes", DocumentationLinks.RELEASE_NOTES))
+            .addComponent(DocumentationLinks.createLinkLabel("Instrumentation via Plugin",               DocumentationLinks.GETTING_STARTED))
+            .addComponent(DocumentationLinks.createLinkLabel("Configure Plugin for Instrumentation",     DocumentationLinks.CONFIGURE_PLUGIN))
+            .addComponent(DocumentationLinks.createLinkLabel("OneAgent SDK — Manual Instrumentation",   DocumentationLinks.MANUAL_SDK_INSTRUMENTATION))
+            .addComponent(DocumentationLinks.createLinkLabel("Adjust Communication with OneAgent SDK",  DocumentationLinks.ADJUST_COMMUNICATION))
+            .addComponent(DocumentationLinks.createLinkLabel("Standalone Manual Instrumentation",       DocumentationLinks.STANDALONE_INSTRUMENTATION))
+            .addComponent(DocumentationLinks.createLinkLabel("Monitoring Capabilities",                 DocumentationLinks.MONITORING_CAPABILITIES))
+            .addComponent(DocumentationLinks.createLinkLabel("Adjust OneAgent Configuration",           DocumentationLinks.ADJUST_ONEAGENT))
+            .addComponent(DocumentationLinks.createLinkLabel("Release Notes",                           DocumentationLinks.RELEASE_NOTES))
             .addVerticalGap(8)
             .panel
             .also { it.border = JBUI.Borders.empty(12, 16, 12, 16) }
@@ -155,6 +158,7 @@ class SummaryStep {
                         "Grail / New RUM".takeIf { config.agentBehaviorGrail }
                     ).joinToString(", "))
             }
+            if (config.agentLogging) appendLine("⚠️  Debug logging:         ENABLED — Remove before production build!")
             if (config.excludePackages.isNotBlank() || config.excludeClasses.isNotBlank() || config.excludeMethods.isNotBlank()) {
                 appendLine("Exclusions:")
                 if (config.excludePackages.isNotBlank()) appendLine("  Packages: ${config.excludePackages}")

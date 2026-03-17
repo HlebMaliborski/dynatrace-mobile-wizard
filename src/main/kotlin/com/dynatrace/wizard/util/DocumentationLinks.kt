@@ -48,7 +48,22 @@ object DocumentationLinks {
     // User & session management
     const val USER_SESSION_MANAGEMENT = "$MOBILE_BASE/user-and-session-management"
 
+    // OneAgent SDK manual instrumentation
+    const val MANUAL_SDK_INSTRUMENTATION =
+        "https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications/instrument-android-app/instrumentation-via-oneagent-sdk"
+
+    // Adjust communication with OneAgent SDK (network security, headers, auth)
+    const val ADJUST_COMMUNICATION =
+        "https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications/instrument-android-app/adjust-communication-oneagent-sdk-android"
+
+    // Standalone manual instrumentation (without Gradle plugin)
+    const val STANDALONE_INSTRUMENTATION =
+        "https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications/instrument-android-app/manually-instrument-application-oneagent-sdk-android"
+
     // Support & limitations
+    // Debug logging
+    const val DEBUG_LOGGING           = "$BASE/enable-debug-logging"
+
     const val SUPPORT_LIMITATIONS     = "$MOBILE_BASE/support-and-limitations"
 
     // Build-specific limitations (anchor on support page)

@@ -53,6 +53,11 @@ class FeatureToggleStep {
     // --- Session Replay ---
     val sessionReplayCheckBox = JBCheckBox("Session Replay (record screen content)", false)
 
+    // --- Debug (NOT for production) ---
+    val agentLoggingCheckBox = JBCheckBox("Enable agent debug logging — NOT for production", false).apply {
+        foreground = WizardColors.error
+    }
+
     // --- Exclusions ---
     val excludePackagesField = JBTextField()
     val excludeClassesField = JBTextField()
@@ -178,6 +183,20 @@ class FeatureToggleStep {
                 "Records screen content and user interactions for visual session playback. " +
                 "Requires a Session Replay license. Emits sessionReplay.enabled(true) — " +
                 "available from plugin 8.281+."))
+            // ── Debug ─────────────────────────────────────────────────────────
+            .addComponent(TitledSeparator("Debug"))
+            .addComponent(JBLabel(
+                "<html><b>⚠ Debug only — do not ship to production.</b> " +
+                "Remove this flag before building your Play Store or release APK. " +
+                "Extra logging may slow down the app and expose sensitive data in device logs.</html>"
+            ).apply {
+                foreground = WizardColors.error
+                border = JBUI.Borders.empty(2, 0, 4, 0)
+            })
+            .addComponent(warningCheckboxItem(agentLoggingCheckBox,
+                "Writes verbose OneAgent output to Android Logcat (filter tag: <b>dtx|caa</b>). " +
+                "Emits <code>debug { agentLogging true }</code> in the Gradle config."))
+            .addComponent(DocumentationLinks.createLinkLabel("Enable debug logging", DocumentationLinks.DEBUG_LOGGING))
             // ── Exclusions ────────────────────────────────────────────────────
             .addComponent(TitledSeparator("Exclusions (Comma-Separated)"))
             .addLabeledComponent(JBLabel("Exclude packages:"),
@@ -236,6 +255,21 @@ class FeatureToggleStep {
         }
 
     /**
+     * Like [checkboxItem] but renders the hint in [WizardColors.error] red.
+     * Used for settings that must not be used in production (e.g. debug logging).
+     */
+    private fun warningCheckboxItem(checkBox: JBCheckBox, hint: String): JComponent =
+        JPanel(BorderLayout()).apply {
+            isOpaque = false
+            add(checkBox, BorderLayout.NORTH)
+            add(JBLabel("<html>$hint</html>").apply {
+                font = JBUI.Fonts.smallFont()
+                foreground = WizardColors.error
+                border = JBUI.Borders.empty(1, JBUI.scale(20), 4, 0)
+            }, BorderLayout.CENTER)
+        }
+
+    /**
      * Returns a panel stacking a text field above a small hint label.
      * The field expands to full width; the hint text wraps automatically.
      */
@@ -288,6 +322,7 @@ class FeatureToggleStep {
     fun isAgentBehaviorGrail(): Boolean = agentBehaviorGrailCheckBox.isSelected
     fun isStrictMode(): Boolean = strictModeCheckBox.isSelected
     fun isSessionReplayEnabled(): Boolean = sessionReplayCheckBox.isSelected
+    fun isAgentLogging(): Boolean = agentLoggingCheckBox.isSelected
     fun getExcludePackages(): String = excludePackagesField.text.trim()
     fun getExcludeClasses(): String = excludeClassesField.text.trim()
     fun getExcludeMethods(): String = excludeMethodsField.text.trim()
@@ -314,6 +349,7 @@ class FeatureToggleStep {
         agentBehaviorGrailCheckBox.isSelected   = config.agentBehaviorGrail
         strictModeCheckBox.isSelected           = config.strictMode
         sessionReplayCheckBox.isSelected        = config.sessionReplayEnabled
+        agentLoggingCheckBox.isSelected         = config.agentLogging
         excludePackagesField.text               = config.excludePackages
         excludeClassesField.text                = config.excludeClasses
         excludeMethodsField.text                = config.excludeMethods

@@ -93,6 +93,31 @@ class SkillsExportServiceTest {
         assertTrue(markdown.contains("mobile-app-id"))
         assertFalse(markdown.contains("SKILL_MANIFEST"))
     }
+
+    @Test
+    fun `generateSkillsMarkdown includes debug logging warning when agentLogging is enabled`() {
+        val service = SkillsExportService()
+        val markdown = service.generateSkillsMarkdown(
+            projectInfo,
+            DynatraceConfig(agentLogging = true),
+            SkillsExportConfig(exportSkillFile = true),
+            generatedAt = Instant.parse("2026-01-01T00:00:00Z")
+        )
+        assertTrue(markdown.contains("Debug agent logging"))
+        assertTrue(markdown.contains("remove before production") || markdown.contains("Remove before production"))
+    }
+
+    @Test
+    fun `generateSkillsMarkdown does not mention debug logging when agentLogging is false`() {
+        val service = SkillsExportService()
+        val markdown = service.generateSkillsMarkdown(
+            projectInfo,
+            DynatraceConfig(agentLogging = false),
+            SkillsExportConfig(exportSkillFile = true),
+            generatedAt = Instant.parse("2026-01-01T00:00:00Z")
+        )
+        assertFalse(markdown.contains("Debug agent logging"))
+    }
 }
 
 class SkillsStepValidationTest {
