@@ -136,10 +136,18 @@ class ModuleSelectionStep {
 
     /**
      * Returns true when [moduleName] already has `agentDependency()` wired up in the
-     * root build file (typically inside a `subprojects { if (project.name == "…") {} }` block).
+     * root build file.
      *
-     * The check is proximity-based: the module name and "agentDependency()" must appear
-     * within 300 characters of each other anywhere in the root build file.
+     * Two cases are handled:
+     *
+     * 1. **Filtered block** (multiple library modules, only some selected):
+     *    `project.name == "moduleName"` appears within 300 chars of `agentDependency()`.
+     *
+     * 2. **Unfiltered block** (single library module, or all modules selected):
+     *    `agentDependency()` is present but no `project.name ==` guard exists nearby.
+     *    This is the `filterAll = true` path in [GradleModificationService] — the SDK
+     *    applies unconditionally to every library subproject, so the checkbox must be
+     *    pre-checked for any library module.
      */
     private fun hasAgentSdk(
         moduleName: String,
@@ -149,11 +157,23 @@ class ModuleSelectionStep {
         return try {
             val content = String(projectBuildFile.contentsToByteArray())
             if (!content.contains("agentDependency()")) return false
-            val nameRegex  = Regex("""["']${Regex.escape(moduleName)}["']""")
-            val agentRegex = Regex("""agentDependency\(\)""")
-            val namePositions  = nameRegex.findAll(content).map { it.range.first }.toList()
-            val agentPositions = agentRegex.findAll(content).map { it.range.first }.toList()
-            namePositions.any { np -> agentPositions.any { ap -> kotlin.math.abs(np - ap) < 300 } }
+
+            val agentRegex     = Regex("""agentDependency\(\)""")
+            val nameRegex      = Regex("""["']${Regex.escape(moduleName)}["']""")
+            val nameGuardRegex = Regex("""project\.name\s*==\s*["'][^"']+["']""")
+
+            val agentPositions     = agentRegex.findAll(content).map { it.range.first }.toList()
+            val namePositions      = nameRegex.findAll(content).map { it.range.first }.toList()
+            val nameGuardPositions = nameGuardRegex.findAll(content).map { it.range.first }.toList()
+
+            // Case 1: explicit module-name guard is near agentDependency()
+            if (namePositions.any { np -> agentPositions.any { ap -> kotlin.math.abs(np - ap) < 300 } }) {
+                return true
+            }
+
+            // Case 2: agentDependency() exists but has no project.name guard nearby →
+            // the block was written with filterAll=true and covers all library modules.
+            agentPositions.any { ap -> nameGuardPositions.none { ng -> kotlin.math.abs(ng - ap) < 500 } }
         } catch (_: Exception) { false }
     }
 

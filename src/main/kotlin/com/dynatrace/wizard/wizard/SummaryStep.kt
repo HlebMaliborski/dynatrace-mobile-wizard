@@ -120,7 +120,7 @@ class SummaryStep {
                 appendLine("Target client:             ${skillsConfig.skillClient.label}")
                 appendLine("Install scope:             ${skillsConfig.skillInstallScope.label}")
                 appendLine("Skill path:                ${skillsConfig.skillFilePath}")
-                appendLine("Skill filename:            skills.md")
+                appendLine("Skill files:               skills.md, setup.md, sdk-apis.md, monitoring.md, troubleshooting.md")
             }
             appendLine("Files likely to change:    root build file${if (selectedAppModules.isNotEmpty() && !projectInfo.usesPluginDsl) ", ${selectedAppModules.size} app module build file(s)" else ""}${if (sdkLibraryModules.isNotEmpty()) ", root SDK helper block" else ""}")
             appendLine()

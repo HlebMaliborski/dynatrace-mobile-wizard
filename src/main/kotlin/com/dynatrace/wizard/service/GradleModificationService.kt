@@ -1299,7 +1299,7 @@ buildscript {
         return content.trimEnd() + "\n\n" + newBlock + "\n"
     }
 
-    private fun buildSdkSubprojectsBlockKts(moduleNames: List<String>, filterAll: Boolean): String =
+    internal fun buildSdkSubprojectsBlockKts(moduleNames: List<String>, filterAll: Boolean): String =
         buildString {
             appendLine("subprojects {")
             appendLine("    pluginManager.withPlugin(\"com.android.library\") {")
@@ -1319,7 +1319,7 @@ buildscript {
             append("}")
         }
 
-    private fun buildSdkSubprojectsBlockGroovy(moduleNames: List<String>, filterAll: Boolean): String =
+    internal fun buildSdkSubprojectsBlockGroovy(moduleNames: List<String>, filterAll: Boolean): String =
         buildString {
             appendLine("subprojects {")
             appendLine("    pluginManager.withPlugin('com.android.library') {")

@@ -172,4 +172,64 @@ class GradleModificationServiceTest {
         val config = service.readExistingConfigFromString(gradleContent)
         assertFalse("agentLogging should default to false", config?.agentLogging == true)
     }
+
+    // ── OneAgent SDK subprojects block — single-module (filterAll) round-trip ──
+
+    /**
+     * Regression test for: "When there is only one library module and I set add OneAgent SDK
+     * dependency, next time when I run plugin I see that it is unset."
+     *
+     * Root cause: with a single library module [filterAll] = true, so the generated
+     * subprojects block contains NO `project.name` guard.  The old proximity-based
+     * detection required the module name to appear near `agentDependency()`, which it
+     * doesn't in the filterAll block → checkbox appeared unchecked on re-run.
+     */
+    @Test
+    fun `buildSdkSubprojectsBlockKts with filterAll omits project name guard`() {
+        val service = GradleModificationService(null)
+        val block = service.buildSdkSubprojectsBlockKts(listOf("mylib"), filterAll = true)
+        assertTrue("block must contain agentDependency()", block.contains("agentDependency()"))
+        assertFalse("filterAll block must NOT contain project.name guard", block.contains("project.name"))
+    }
+
+    @Test
+    fun `buildSdkSubprojectsBlockGroovy with filterAll omits project name guard`() {
+        val service = GradleModificationService(null)
+        val block = service.buildSdkSubprojectsBlockGroovy(listOf("mylib"), filterAll = true)
+        assertTrue("block must contain agentDependency()", block.contains("agentDependency()"))
+        assertFalse("filterAll block must NOT contain project.name guard", block.contains("project.name"))
+    }
+
+    @Test
+    fun `buildSdkSubprojectsBlockKts with multiple modules emits project name guards`() {
+        val service = GradleModificationService(null)
+        val block = service.buildSdkSubprojectsBlockKts(listOf("lib1", "lib2"), filterAll = false)
+        assertTrue(block.contains("project.name == \"lib1\""))
+        assertTrue(block.contains("project.name == \"lib2\""))
+    }
+
+    /**
+     * Simulates the detection logic that [ModuleSelectionStep.hasAgentSdk] applies on re-run.
+     * When a single-module (filterAll) block was written, the module name is absent from the
+     * block, so the proximity check alone returns false.  The fallback — "agentDependency()
+     * with no project.name guard nearby" — must detect the block as already configured.
+     */
+    @Test
+    fun `hasAgentSdk detection succeeds for filterAll block without project name guard`() {
+        val service = GradleModificationService(null)
+        val rootBuildContent = """
+            plugins { id("com.android.application") }
+        """.trimIndent() + "\n\n" +
+            service.buildSdkSubprojectsBlockKts(listOf("mylib"), filterAll = true)
+
+        assertTrue("agentDependency() must be present", rootBuildContent.contains("agentDependency()"))
+        assertFalse("filterAll block must not contain project.name", rootBuildContent.contains("project.name"))
+
+        // Replicate the fixed detection logic from hasAgentSdk
+        val agentPositions     = Regex("""agentDependency\(\)""").findAll(rootBuildContent).map { it.range.first }.toList()
+        val nameGuardPositions = Regex("""project\.name\s*==\s*["'][^"']+["']""").findAll(rootBuildContent).map { it.range.first }.toList()
+        val detectedByFallback = agentPositions.any { ap -> nameGuardPositions.none { ng -> kotlin.math.abs(ng - ap) < 500 } }
+
+        assertTrue("filterAll block must be detected as already configured by fallback check", detectedByFallback)
+    }
 }

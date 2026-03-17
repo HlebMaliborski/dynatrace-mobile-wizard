@@ -59,23 +59,21 @@ class SkillsExportServiceTest {
         assertTrue(markdown.contains("User opt-in: Enabled"))
         // No self-referencing parent field
         assertFalse(markdown.contains("parent: dynatrace-android-sdk"))
-        // DynatraceConfigurationBuilder reference table
-        assertTrue(markdown.contains("DynatraceConfigurationBuilder Reference"))
-        assertTrue(markdown.contains(".withUserOptIn(true)"))
-        // endVisit API
-        assertTrue(markdown.contains("Dynatrace.endVisit()"))
-        // Standalone instrumentation
-        assertTrue(markdown.contains("Standalone Manual Instrumentation"))
-        assertTrue(markdown.contains("com.dynatrace.agent:agent-android"))
-        // New Common Issues rows
-        assertTrue(markdown.contains("Custom action never appears"))
-        assertTrue(markdown.contains("Manual startup config ignored"))
-        assertTrue(markdown.contains("WebSocket timing not reported"))
-        // What to do with the output table
+        // Sub-skills routing table is present
+        assertTrue(markdown.contains("[`setup.md`](setup.md)"))
+        assertTrue(markdown.contains("[`sdk-apis.md`](sdk-apis.md)"))
+        assertTrue(markdown.contains("[`monitoring.md`](monitoring.md)"))
+        assertTrue(markdown.contains("[`troubleshooting.md`](troubleshooting.md)"))
+        // Detect section remains project-specific
         assertTrue(markdown.contains("What to do with the output"))
         assertTrue(markdown.contains("Use Plugin DSL approach"))
-        // New RUM Experience
-        assertTrue(markdown.contains("Enable the New RUM Experience"))
+        // Skill Installation mentions 5 files
+        assertTrue(markdown.contains("5 files"))
+        // Reference content is NOT duplicated in skills.md — it lives in sub-files
+        assertFalse(markdown.contains("DynatraceConfigurationBuilder Reference"))
+        assertFalse(markdown.contains("Standalone Manual Instrumentation"))
+        assertFalse(markdown.contains("Custom action never appears"))
+        assertFalse(markdown.contains("Enable the New RUM Experience"))
     }
 
     @Test
@@ -138,6 +136,39 @@ class SkillsExportServiceTest {
             generatedAt = Instant.parse("2026-01-01T00:00:00Z")
         )
         assertFalse(markdown.contains("Debug agent logging"))
+    }
+
+    @Test
+    fun `SUB_SKILL_FILES lists all four expected filenames`() {
+        val files = SkillsExportService.SUB_SKILL_FILES
+        assertTrue(files.contains("setup.md"))
+        assertTrue(files.contains("sdk-apis.md"))
+        assertTrue(files.contains("monitoring.md"))
+        assertTrue(files.contains("troubleshooting.md"))
+        assertTrue(files.size == 4)
+    }
+
+    @Test
+    fun `all sub-skill resources are present on the classpath and non-empty`() {
+        SkillsExportService.SUB_SKILL_FILES.forEach { name ->
+            val stream = SkillsExportService::class.java.getResourceAsStream("/skills/$name")
+            assertNotNull("Resource /skills/$name should exist", stream)
+            val text = stream!!.bufferedReader().readText()
+            assertTrue("Resource /skills/$name should not be blank", text.isNotBlank())
+        }
+    }
+
+    @Test
+    fun `sub-skill resources contain expected reference content`() {
+        fun load(name: String) = SkillsExportService::class.java
+            .getResourceAsStream("/skills/$name")!!.bufferedReader().readText()
+
+        assertTrue(load("setup.md").contains("DynatraceConfigurationBuilder"))
+        assertTrue(load("setup.md").contains("Standalone Manual Instrumentation"))
+        assertTrue(load("sdk-apis.md").contains("enterAction"))
+        assertTrue(load("sdk-apis.md").contains("endVisit"))
+        assertTrue(load("monitoring.md").contains("New RUM Experience"))
+        assertTrue(load("troubleshooting.md").contains("Custom action never appears"))
     }
 
     @Test

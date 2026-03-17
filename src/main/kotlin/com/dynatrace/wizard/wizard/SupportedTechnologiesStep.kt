@@ -23,7 +23,7 @@ import javax.swing.JPanel
  *  - Gradle Wrapper (min 7.0.2)
  *  - Android Gradle Plugin (min 7.0)
  *  - Java (min 11)
- *  - Kotlin (1.8 – 2.2 — ~2 versions back/forward from 2.0.21 baseline)
+ *  - Kotlin (1.8 – 2.3 — versions above 2.3 are untested; instrumentation will probably work)
  *  - Jetpack Compose (1.4 – 1.10)
  *  - OkHttp (v3+)
  *
@@ -44,7 +44,9 @@ class SupportedTechnologiesStep {
         val minVersion: String? = null,
         val maxVersion: String? = null,
         val detectionId: String? = null,
-        val note: String = ""
+        val note: String = "",
+        /** When set, in-range detection shows ⚠️ "Likely compatible" + this note instead of ✅ "Compatible". */
+        val noteWhenInRange: String = ""
     )
 
     /** @param detectedVersion null = absent / unknown · "BOM …" = BOM-managed */
@@ -89,13 +91,16 @@ class SupportedTechnologiesStep {
         ),
         TechItem(
             name = "Kotlin",
-            // Keep the range generous — Dynatrace typically trails Kotlin by 1-2 minor versions
-            versionLabel = "1.8 – 2.5",
+            // 2.3 is the last verified range — higher versions are likely fine but untested
+            versionLabel = "1.8 – 2.3",
             type = SupportType.AUTO,
             detectionId = "KOTLIN",
             minVersion = "1.8.0",
-            maxVersion = "2.5.99",
-            note = "Required for Coroutines and Compose instrumentation"
+            maxVersion = "2.3.99",
+            note = "Required for Coroutines and Compose instrumentation",
+            noteWhenInRange = "Kotlin versions in this range should work without issues. " +
+                "Dynatrace typically trails Kotlin by 1–2 minor versions, " +
+                "so expect no problems if you stay in the 1.8–2.3 range."
         ),
         TechItem(
             name = "Jetpack Compose",
@@ -367,6 +372,7 @@ class SupportedTechnologiesStep {
             JBLabel(
                 "<html>Versions detected in your project vs. the Dynatrace-supported range.<br>" +
                 "<b style='color:green'>Green</b> = compatible · " +
+                "<b style='color:#C76B00'>Amber</b> = likely compatible, probably no issues · " +
                 "<b style='color:red'>Red</b> = unsupported version · " +
                 "Grey = not detected in project.</html>"
             ).apply {
@@ -460,6 +466,9 @@ class SupportedTechnologiesStep {
                 result.detectedVersion.startsWith("BOM ") -> Row(
                     "✅", "Compatible (BOM)", WizardColors.success, result.detectedVersion, true
                 )
+                result.inRange && item.noteWhenInRange.isNotBlank() -> Row(
+                    "⚠️", "Likely compatible", WizardColors.warning, result.detectedVersion, true
+                )
                 result.inRange -> Row(
                     "✅", "Compatible", WizardColors.success, result.detectedVersion, true
                 )
@@ -477,6 +486,7 @@ class SupportedTechnologiesStep {
                     item.type == SupportType.BUILT_IN && result.detectedVersion != null -> UIUtil.getLabelForeground()
                     result.detectedVersion == null -> UIUtil.getContextHelpForeground()
                     result.detectedVersion == "BOM" || result.detectedVersion.startsWith("BOM ") -> WizardColors.success
+                    result.inRange && item.noteWhenInRange.isNotBlank() -> WizardColors.warning
                     result.inRange -> WizardColors.success
                     else           -> WizardColors.error
                 }
@@ -487,6 +497,16 @@ class SupportedTechnologiesStep {
             grid.add(JBLabel(statusText).apply {
                 foreground = statusColor
             })
+
+            // Hint row for "likely compatible" (in-range but soft upper bound)
+            if (result.inRange && item.noteWhenInRange.isNotBlank() && result.detectedVersion != null) {
+                grid.add(JBLabel("<html><i>${item.noteWhenInRange}</i></html>").apply {
+                    font       = JBUI.Fonts.smallFont()
+                    foreground = WizardColors.warning
+                    border     = JBUI.Borders.empty(0, JBUI.scale(24), 2, 0)
+                })
+                repeat(3) { grid.add(JPanel().apply { isOpaque = false }) }
+            }
 
             // Hint row: label in col 0, 3 blank fillers for cols 1–3
             if (!result.inRange && result.detectedVersion != null && item.type == SupportType.AUTO) {

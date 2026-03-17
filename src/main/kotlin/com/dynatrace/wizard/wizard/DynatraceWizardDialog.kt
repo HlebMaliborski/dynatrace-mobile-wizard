@@ -43,7 +43,7 @@ class DynatraceWizardDialog(
     private val moduleSelectionStep = ModuleSelectionStep()
     private val supportedTechStep   = SupportedTechnologiesStep()
     private val featureStep         = FeatureToggleStep()
-    private val skillsStep          = SkillsStep()
+    private val skillsStep          = SkillsStep(project)
     private val summaryStep         = SummaryStep()
 
     private val tabbedPane   = JBTabbedPane()
@@ -98,7 +98,7 @@ class DynatraceWizardDialog(
         val modulePanel       = moduleSelectionStep.createPanel(projectInfo)
         val techPanel         = supportedTechStep.createPanel(projectInfo)
         val featurePanel      = featureStep.createPanel()
-        val skillsPanel       = skillsStep.createPanel()
+        val skillsPanel       = skillsStep.createPanel(projectInfo)
         val summaryPanel      = summaryStep.createPanel()
 
         tabbedPane.addTab("1. Welcome",      scrollable(welcomePanel))
@@ -415,7 +415,7 @@ class DynatraceWizardDialog(
 
             showNotification(
                 "Dynatrace configuration applied successfully!\n" +
-                (exportedSkillPath?.let { "AI skill file exported to: $it\n" } ?: "") +
+                (exportedSkillPath?.let { "AI skill files (5) exported to: ${it.substringBeforeLast("/")}/\n" } ?: "") +
                 "Sync your Gradle project to activate the changes.",
                 NotificationType.INFORMATION
             )

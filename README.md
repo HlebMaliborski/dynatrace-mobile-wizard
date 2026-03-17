@@ -18,7 +18,11 @@ configuration for Android projects through a guided wizard dialog.
 
 ![Features tab](docs/screenshots/wizard/05-features.png)
 
-![Summary tab](docs/screenshots/wizard/06-summary.png)
+![Skills tab](docs/screenshots/wizard/06-skills.png)
+<!-- TODO: replace 06-skills.png with an actual screenshot of the Skills / AI tab -->
+
+![Summary tab](docs/screenshots/wizard/07-summary.png)
+<!-- TODO: rename 06-summary.png → 07-summary.png to match the new tab order -->
 
 ## Features
 
@@ -38,6 +42,7 @@ configuration for Android projects through a guided wizard dialog.
   `configure<com.dynatrace.tools.android.dsl.DynatraceExtension> {}` when needed
 - 🔬 **Technology compatibility scan** — detects 20+ libraries and frameworks in the project and reports Dynatrace
   compatibility against known version ranges
+- 🔍 **Feature search** — live filter bar on the Features tab lets you search toggles by keyword; non-matching sections collapse automatically
 - ✏️ **Gradle file modification** — adds the Dynatrace Gradle plugin and `dynatrace {}` configuration block with correct
   placement and deduplication
 - 🧹 **Approach migration** — switches cleanly between Plugin DSL and per-module by removing stale coordinator
@@ -45,7 +50,7 @@ configuration for Android projects through a guided wizard dialog.
 - 🔀 **Groovy & Kotlin DSL support** — handles both `build.gradle` and `build.gradle.kts`
 - ✅ **Input validation** — real-time validation for Application ID and Beacon URL (with per-module field support)
 - 📋 **Change preview** — the Summary tab shows exactly what will be written before applying
-- 🤖 **AI skill export** — optional Markdown `skills.md` export from a dedicated Skills tab for sharing reusable setup skills with AI agents
+- 🤖 **AI skill export** — optional Markdown skill-set export (5 files) from a dedicated Skills tab for sharing reusable setup skills with AI agents; choose client, install scope, and output path
 - 🔔 **IDE notifications** — success and error notifications via IntelliJ's notification system
 - ↩️ **Undo support** — all Gradle file writes use `WriteCommandAction` and can be undone with Ctrl/Cmd+Z
 
@@ -106,6 +111,8 @@ toggle switches to individual mode.
 
 ## Features Tab
 
+Use the **search bar** at the top of the tab to filter toggles by name or keyword (e.g. type `gdpr` to jump straight to the opt-in toggle, or `crash` to find crash reporting options). Sections with no matching rows collapse automatically.
+
 | Section                  | Options                                                                                       |
 |--------------------------|-----------------------------------------------------------------------------------------------|
 | **Global**               | Plugin enabled (global kill-switch for all instrumentation)                                   |
@@ -123,14 +130,23 @@ toggle switches to individual mode.
 
 ### AI Skill Export
 
-When **Export AI skill file** is enabled on the Skills tab, the wizard writes a Markdown
-`skills.md` file during **Finish**. The default target depends on the selected AI client and install scope.
+When **Export AI skill file** is enabled on the Skills tab, the wizard writes **5 Markdown files** during **Finish**:
 
-The exported skill includes:
+| File | Content |
+|------|---------|
+| `skills.md` | Project-specific index — your app modules, credentials, selected features, and generated Gradle blocks |
+| `setup.md` | Full plugin setup & configuration reference (DSL snippets, multi-module patterns, manual startup) |
+| `sdk-apis.md` | OneAgent SDK API reference (user actions, business events, web request timing, hybrid monitoring) |
+| `monitoring.md` | Monitoring features reference (web requests, crash/ANR, W3C Trace Context, custom events) |
+| `troubleshooting.md` | Troubleshooting guide (build errors, runtime Q&A, instrumentation limitations) |
+
+All five files are written to the same directory. The default target depends on the selected AI client and install scope.
+
+`skills.md` includes:
 
 - frontmatter metadata and invocation guidance
 - target app modules and selected Dynatrace features
-- capability flags inferred from selected Dynatrace options
+- generated `dynatrace {}` block for both Kotlin and Groovy DSL
 - a quick-reference install-location table for supported AI clients
 - project/module context captured from the wizard, including excluded modules and optional OneAgent SDK targets
 
@@ -145,9 +161,9 @@ User-level = available to all projects; project-level = repository-only.
 | OpenCode | `~/.config/opencode/skill/` | `.opencode/skill/` |
 | AmpCode | `~/.config/agents/skills/` | `.agents/skills/` |
 
-The file is generated **on the fly** when you click **Finish** in the wizard and written directly into your Android project.
+The files are generated / copied **on the fly** when you click **Finish** in the wizard and written directly into your Android project.
 
-The canonical reference skill — covering all setup flows, DSLs, and features — is at [`docs/skills/skills.md`](docs/skills/skills.md). It can be installed manually into any supported AI client without running the wizard.
+The canonical reference skills — covering all setup flows, DSLs, and features — ship with the plugin under [`docs/skills/`](docs/skills/). They can be installed manually into any supported AI client without running the wizard.
 
 ---
 
@@ -158,7 +174,7 @@ compatibility status for:
 
 | Category           | Technologies                                                                       |
 |--------------------|------------------------------------------------------------------------------------|
-| Build & Toolchain  | Android Gradle Plugin (8.0+), Kotlin (1.6+), Gradle Wrapper, Android SDK API level |
+| Build & Toolchain  | Android Gradle Plugin (8.0+), Kotlin (1.8–2.3 — probably no issues in this range), Gradle Wrapper, Android SDK API level |
 | HTTP & Networking  | HttpURLConnection, OkHttp (v3+), Retrofit 2, Apache HTTP Client                    |
 | Jetpack & UI       | Jetpack Compose (1.4–1.10), Android Views / Activities                             |
 | Async              | Kotlin Coroutines (1.10.2–2.1)                                                     |
@@ -170,6 +186,7 @@ compatibility status for:
 Each entry shows one of:
 
 - ✅ **Compatible** — detected and within the supported version range
+- ⚠️ **Likely compatible** — detected, within the range, but Dynatrace has not yet published explicit support for the exact version; instrumentation should work without issues
 - ❌ **Unsupported version** — detected but outside the supported range
 - 💡 **Not in project** — library not found; no action required
 - 🔷 **Built-in / Informational** — always available; detected version shown for reference
@@ -293,13 +310,14 @@ dynatrace_wizard/
     ├── kotlin/com/dynatrace/wizard/
     │   ├── DynatraceWizardAction.kt           # Action (Tools menu / context menu)
     │   ├── wizard/
-    │   │   ├── DynatraceWizardDialog.kt       # 6-tab wizard dialog + navigation
+    │   │   ├── DynatraceWizardDialog.kt       # 7-tab wizard dialog + navigation
     │   │   ├── WelcomeStep.kt                 # Tab 1: project detection overview
-    │   │   ├── EnvironmentConfigStep.kt       # Tab 2: App ID + Beacon URL (per-module support)
-    │   │   ├── ModuleSelectionStep.kt         # Tab 3: module selection + approach toggle
+    │   │   ├── ModuleSelectionStep.kt         # Tab 2: module selection + approach toggle
+    │   │   ├── EnvironmentConfigStep.kt       # Tab 3: App ID + Beacon URL (per-module support)
     │   │   ├── SupportedTechnologiesStep.kt   # Tab 4: technology compatibility scan
-    │   │   ├── FeatureToggleStep.kt           # Tab 5: instrumentation feature toggles
-    │   │   └── SummaryStep.kt                 # Tab 6: change preview
+    │   │   ├── FeatureToggleStep.kt           # Tab 5: instrumentation feature toggles (with live search)
+    │   │   ├── SkillsStep.kt                  # Tab 6: AI skill export (client, scope, output path)
+    │   │   └── SummaryStep.kt                 # Tab 7: change preview
     │   ├── model/
     │   │   └── DynatraceConfig.kt             # Configuration data model (incl. ModuleCredentials)
     │   ├── service/
