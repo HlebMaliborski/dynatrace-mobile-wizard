@@ -1,10 +1,12 @@
 package com.dynatrace.wizard.wizard
 
 import com.dynatrace.wizard.model.DynatraceConfig
+import com.dynatrace.wizard.model.SkillsExportConfig
 import com.dynatrace.wizard.service.GradleModificationService
 import com.dynatrace.wizard.service.ProjectDetectionService
 import com.dynatrace.wizard.util.DocumentationLinks
 import com.dynatrace.wizard.util.WizardColors
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.ui.TitledSeparator
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
@@ -13,7 +15,9 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.Dimension
 import java.awt.Font
+import java.awt.datatransfer.StringSelection
 import javax.swing.JComponent
+import javax.swing.JButton
 import javax.swing.JTextArea
 
 /**
@@ -24,12 +28,19 @@ class SummaryStep {
 
     private val summaryArea = JTextArea().apply {
         isEditable = false
-        font = Font(Font.MONOSPACED, Font.PLAIN, JBUI.scaleFontSize(12f).toInt())
+        font = Font(Font.MONOSPACED, Font.PLAIN, JBUI.scaleFontSize(12f))
         background = UIUtil.getPanelBackground()
         foreground = UIUtil.getLabelForeground()
         border = JBUI.Borders.empty(8)
         lineWrap = true
         wrapStyleWord = true
+    }
+
+    private val copyPreviewButton = JButton("Copy preview").apply {
+        toolTipText = "Copy the full summary and preview to the clipboard"
+        addActionListener {
+            CopyPasteManager.getInstance().setContents(StringSelection(summaryArea.text))
+        }
     }
 
     fun createPanel(): JComponent {
@@ -56,14 +67,18 @@ class SummaryStep {
                     border = JBUI.Borders.emptyBottom(8)
                 }
             )
+            .addComponent(copyPreviewButton)
             .addComponentFillVertically(scrollArea, 0)
             // ── Documentation ──────────────────────────────────────────────────
             .addComponent(TitledSeparator("Documentation"))
-            .addComponent(DocumentationLinks.createLinkLabel("Instrumentation via Plugin", DocumentationLinks.GETTING_STARTED))
-            .addComponent(DocumentationLinks.createLinkLabel("Configure Plugin for Instrumentation", DocumentationLinks.CONFIGURE_PLUGIN))
-            .addComponent(DocumentationLinks.createLinkLabel("Monitoring Capabilities", DocumentationLinks.MONITORING_CAPABILITIES))
-            .addComponent(DocumentationLinks.createLinkLabel("Adjust OneAgent Configuration", DocumentationLinks.ADJUST_ONEAGENT))
-            .addComponent(DocumentationLinks.createLinkLabel("Release Notes", DocumentationLinks.RELEASE_NOTES))
+            .addComponent(DocumentationLinks.createLinkLabel("Instrumentation via Plugin",               DocumentationLinks.GETTING_STARTED))
+            .addComponent(DocumentationLinks.createLinkLabel("Configure Plugin for Instrumentation",     DocumentationLinks.CONFIGURE_PLUGIN))
+            .addComponent(DocumentationLinks.createLinkLabel("OneAgent SDK — Manual Instrumentation",   DocumentationLinks.MANUAL_SDK_INSTRUMENTATION))
+            .addComponent(DocumentationLinks.createLinkLabel("Adjust Communication with OneAgent SDK",  DocumentationLinks.ADJUST_COMMUNICATION))
+            .addComponent(DocumentationLinks.createLinkLabel("Standalone Manual Instrumentation",       DocumentationLinks.STANDALONE_INSTRUMENTATION))
+            .addComponent(DocumentationLinks.createLinkLabel("Monitoring Capabilities",                 DocumentationLinks.MONITORING_CAPABILITIES))
+            .addComponent(DocumentationLinks.createLinkLabel("Adjust OneAgent Configuration",           DocumentationLinks.ADJUST_ONEAGENT))
+            .addComponent(DocumentationLinks.createLinkLabel("Release Notes",                           DocumentationLinks.RELEASE_NOTES))
             .addVerticalGap(8)
             .panel
             .also { it.border = JBUI.Borders.empty(12, 16, 12, 16) }
@@ -74,11 +89,49 @@ class SummaryStep {
     fun updateSummary(
         projectInfo: ProjectDetectionService.ProjectInfo,
         config: DynatraceConfig,
+        skillsConfig: SkillsExportConfig,
         gradleService: GradleModificationService,
         sdkLibraryModules: List<ProjectDetectionService.ModuleInfo> = emptyList(),
-        deselectedModules: List<ProjectDetectionService.ModuleInfo> = emptyList()
+        deselectedModules: List<ProjectDetectionService.ModuleInfo> = emptyList(),
+        skillsPreview: String? = null
     ) {
         val preview = gradleService.generateChangePreview(projectInfo, config, deselectedModules)
+
+        val selectedAppModules = projectInfo.appModules.map { it.name }
+        val sharedCredentials = config.moduleCredentials.isEmpty()
+        val warnings = buildList {
+            if (!config.pluginEnabled) add("Plugin enabled is turned off, so automatic capture stays configured but inactive until you re-enable it.")
+            if (!config.autoInstrument) add("Auto-instrumentation is disabled. Monitoring toggles and exclusions will be kept, but bytecode-based capture will not run.")
+            if (!config.autoStartEnabled) add("Auto-start is disabled. You will need to add the manual OneAgent startup snippet shown below.")
+            if (config.sessionReplayEnabled) add("Session Replay is enabled. Make sure the target environment and privacy approvals are ready before release.")
+            if (deselectedModules.isNotEmpty()) add("${deselectedModules.size} previously configured app module(s) will have Dynatrace instrumentation removed: ${deselectedModules.joinToString { it.name }}.")
+        }
+
+        val atAGlance = buildString {
+            appendLine("=== At a Glance ===")
+            appendLine()
+            appendLine("Setup flow:                ${projectInfo.setupFlow.title}")
+            appendLine("Instrumentation approach:  ${if (projectInfo.usesPluginDsl) "Plugin DSL at root" else "Buildscript classpath + per-module plugin"}")
+            appendLine("Application modules:       ${if (selectedAppModules.isEmpty()) "None selected" else selectedAppModules.joinToString()}")
+            appendLine("Credential mode:           ${if (sharedCredentials) "Shared app credentials" else "Per-module credentials for ${config.moduleCredentials.size} module(s)"}")
+            appendLine("Library SDK opt-in:        ${if (sdkLibraryModules.isEmpty()) "None" else sdkLibraryModules.joinToString { it.name }}")
+            appendLine("AI skill export:           ${if (skillsConfig.exportSkillFile) "Enabled" else "Disabled"}")
+            if (skillsConfig.exportSkillFile) {
+                appendLine("Target client:             ${skillsConfig.skillClient.label}")
+                appendLine("Install scope:             ${skillsConfig.skillInstallScope.label}")
+                appendLine("Skill path:                ${skillsConfig.skillFilePath}")
+                appendLine("Skill files:               skills.md, setup.md, sdk-apis.md, monitoring.md, troubleshooting.md")
+            }
+            appendLine("Files likely to change:    root build file${if (selectedAppModules.isNotEmpty() && !projectInfo.usesPluginDsl) ", ${selectedAppModules.size} app module build file(s)" else ""}${if (sdkLibraryModules.isNotEmpty()) ", root SDK helper block" else ""}")
+            appendLine()
+        }
+
+        val warningsSummary = if (warnings.isNotEmpty()) buildString {
+            appendLine("=== Warnings & Follow-up ===")
+            appendLine()
+            warnings.forEach { appendLine("• $it") }
+            appendLine()
+        } else ""
 
         val configSummary = buildString {
             appendLine("=== Configuration Summary ===\n")
@@ -88,6 +141,8 @@ class SummaryStep {
             appendLine("Auto-start:               ${if (config.autoStartEnabled) "Enabled" else "Disabled — manual startup required"}")
             appendLine("Auto-instrumentation:     ${if (config.autoInstrument) "Enabled" else "Disabled"}")
             appendLine("Crash reporting:          ${if (config.crashReporting) "Enabled" else "Disabled"}")
+            appendLine("ANR reporting:            ${if (config.anrReporting) "Enabled" else "Disabled (Android 11+ only)"}")
+            appendLine("Native crash reporting:   ${if (config.nativeCrashReporting) "Enabled" else "Disabled (Android 11+ only)"}")
             appendLine("User opt-in mode:         ${if (config.userOptIn) "Enabled" else "Disabled"}")
             appendLine("Name privacy:             ${if (config.namePrivacy) "Enabled (action names masked)" else "Disabled"}")
             appendLine("Compose instrumentation:  ${if (config.composeEnabled) "Enabled" else "Disabled"}")
@@ -103,6 +158,7 @@ class SummaryStep {
                         "Grail / New RUM".takeIf { config.agentBehaviorGrail }
                     ).joinToString(", "))
             }
+            if (config.agentLogging) appendLine("⚠️  Debug logging:         ENABLED — Remove before production build!")
             if (config.excludePackages.isNotBlank() || config.excludeClasses.isNotBlank() || config.excludeMethods.isNotBlank()) {
                 appendLine("Exclusions:")
                 if (config.excludePackages.isNotBlank()) appendLine("  Packages: ${config.excludePackages}")
@@ -153,7 +209,21 @@ class SummaryStep {
             }
         } else ""
 
-        summaryArea.text = configSummary + preview + sdkPreview + manualStartupSnippet
+        val skillManifestSection = if (!skillsPreview.isNullOrBlank()) buildString {
+            appendLine()
+            appendLine("=== AI Skill Preview (first 35 lines) ===")
+            appendLine()
+            val lines = skillsPreview.lines()
+            val preview = lines.take(35).joinToString("\n")
+            appendLine(preview)
+            if (lines.size > 35) {
+                appendLine()
+                appendLine("... [${lines.size - 35} more lines — full content will be written to ${skillsConfig.skillFilePath}]")
+            }
+            appendLine()
+        } else ""
+
+        summaryArea.text = atAGlance + warningsSummary + configSummary + preview + sdkPreview + skillManifestSection + manualStartupSnippet
         summaryArea.caretPosition = 0
     }
 }

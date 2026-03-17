@@ -21,13 +21,19 @@
             <li><b>Multi-module support</b> — single-app, multi-app, and dynamic feature module projects;
                 per-module Application ID and Beacon URL; optional OneAgent SDK for library modules</li>
             <li><b>Environment setup</b> — validates Application ID and Beacon URL with inline feedback</li>
-            <li><b>Technology overview</b> — shows which Dynatrace monitoring capabilities apply to your stack</li>
-            <li><b>Full feature control</b> — toggles for crash reporting, user actions, web request monitoring,
-                Jetpack Compose instrumentation, hybrid (WebView) monitoring, location, privacy,
-                rage-tap detection, build-variant targeting, class/method exclusions, and more</li>
+            <li><b>Technology check</b> — detects project versions for Gradle, AGP, Java, Kotlin,
+                Jetpack Compose, and OkHttp; warns when other instrumentation plugins
+                (Firebase Perf, New Relic, Datadog, Sentry, etc.) are found in the project</li>
+            <li><b>Full feature control</b> — toggles for crash reporting, ANR reporting,
+                native (NDK) crash reporting, user actions, web request monitoring,
+                Jetpack Compose instrumentation, Session Replay, hybrid (WebView) monitoring,
+                location, privacy / GDPR opt-in, rage-tap detection, build-variant targeting,
+                class/method exclusions, and more</li>
             <li><b>Change preview</b> — shows the exact Gradle code that will be written before you commit</li>
             <li><b>Safe writes</b> — every file edit uses <code>WriteCommandAction</code>, making all
                 changes fully undoable via <b>Edit → Undo</b></li>
+            <li><b>AI skill export</b> — generates a project-specific <code>skills.md</code> for
+                GitHub Copilot, Claude Code, Cursor, and other AI coding agents</li>
         </ul>
 
         <h3>Wizard tabs</h3>
@@ -35,8 +41,9 @@
             <li><b>Welcome</b> — detects Android project, DSL, module structure, and setup flow</li>
             <li><b>Modules</b> — select which app modules to instrument; configure approach for multi-app projects</li>
             <li><b>Environment</b> — enter Application ID and Beacon URL (per-module for multi-app)</li>
-            <li><b>Technologies</b> — supported technology overview for your project's dependencies</li>
+            <li><b>Technologies</b> — version compatibility check; warns about competing instrumentation plugins</li>
             <li><b>Features</b> — enable/disable individual instrumentation capabilities</li>
+            <li><b>Skills</b> — export a reusable Markdown <code>skills.md</code> for AI coding agents</li>
             <li><b>Summary</b> — full Gradle code preview; click Finish to apply</li>
         </ol>
 

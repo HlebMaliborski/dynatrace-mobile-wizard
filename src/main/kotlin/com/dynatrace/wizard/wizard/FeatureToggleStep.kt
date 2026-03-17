@@ -3,6 +3,7 @@ package com.dynatrace.wizard.wizard
 import com.dynatrace.wizard.model.DynatraceConfig
 import com.dynatrace.wizard.util.DocumentationLinks
 import com.dynatrace.wizard.util.WizardColors
+import com.intellij.ui.DocumentAdapter
 import com.intellij.ui.TitledSeparator
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
@@ -11,12 +12,21 @@ import com.intellij.util.ui.FormBuilder
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.BorderLayout
+import java.awt.Component
 import java.awt.Dimension
+import javax.swing.BoxLayout
+import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JPanel
+import javax.swing.event.DocumentEvent
 
 /**
  * Step 3 of the wizard: Feature toggles for Dynatrace instrumentation options.
+ *
+ * A live search bar at the top filters sections and rows in real time.
+ * The filterable content lives in a BoxLayout(Y_AXIS) panel so invisible rows
+ * collapse cleanly; the Exclusions, Build Variant, and Documentation sections
+ * are always visible and sit below the filterable area in the outer FormBuilder.
  */
 class FeatureToggleStep {
 
@@ -32,6 +42,8 @@ class FeatureToggleStep {
     val webRequestsCheckBox = JBCheckBox("Web request monitoring", true)
     val lifecycleCheckBox = JBCheckBox("Lifecycle monitoring", true)
     val crashReportingCheckBox = JBCheckBox("Crash reporting", true)
+    val anrReportingCheckBox = JBCheckBox("ANR (Application Not Responding) reporting", true)
+    val nativeCrashReportingCheckBox = JBCheckBox("Native crash reporting (NDK)", true)
 
     // --- Compose & Behavioral ---
     val composeEnabledCheckBox = JBCheckBox("Jetpack Compose auto-instrumentation", true)
@@ -51,6 +63,11 @@ class FeatureToggleStep {
     // --- Session Replay ---
     val sessionReplayCheckBox = JBCheckBox("Session Replay (record screen content)", false)
 
+    // --- Debug (NOT for production) ---
+    val agentLoggingCheckBox = JBCheckBox("Enable agent debug logging — NOT for production", false).apply {
+        foreground = WizardColors.error
+    }
+
     // --- Exclusions ---
     val excludePackagesField = JBTextField()
     val excludeClassesField = JBTextField()
@@ -59,15 +76,86 @@ class FeatureToggleStep {
     // --- Build variant ---
     val buildVariantField = JBTextField()
 
+    private val instrumentationStatusLabel = JBLabel().apply {
+        font = JBUI.Fonts.smallFont()
+        foreground = UIUtil.getContextHelpForeground()
+    }
+
+    private val autoInstrumentationDependents by lazy {
+        listOf<JComponent>(
+            userActionsCheckBox,
+            webRequestsCheckBox,
+            lifecycleCheckBox,
+            composeEnabledCheckBox,
+            rageTapCheckBox,
+            excludePackagesField,
+            excludeClassesField,
+            excludeMethodsField
+        )
+    }
+
+    // ── Search infrastructure ──────────────────────────────────────────────
+
+    /** Live-search field placed directly above the filterable section list. */
+    private val searchField = JBTextField()
+
+    /** "✕" button — visible only when search field contains text. */
+    private val clearSearchButton = JButton("✕").apply {
+        preferredSize = Dimension(JBUI.scale(22), JBUI.scale(22))
+        isFocusable = false
+        toolTipText = "Clear search"
+    }
+
+    /** Container for all filterable sections (Global → Debug). Uses BoxLayout Y_AXIS
+     *  so that setting isVisible = false on a child row collapses its space. */
+    private val filterableContent = JPanel().apply {
+        layout = BoxLayout(this, BoxLayout.Y_AXIS)
+        isOpaque = false
+    }
+
+    private data class FilterRow(val panel: JComponent, val keywords: String)
+    private data class FilterSection(val separator: TitledSeparator, val rows: List<FilterRow>)
+    private val filterSections = mutableListOf<FilterSection>()
+
+    /**
+     * Creates the settings panel for feature toggles, organized into sections
+     * with a search/filter bar at the top.
+     */
     fun createPanel(): JComponent {
-        excludePackagesField.emptyText.setText("e.g. com.example.analytics, com.third.party")
-        excludeClassesField.emptyText.setText("e.g. com.example.HeavyClass")
-        excludeMethodsField.emptyText.setText("e.g. com.example.Util.expensiveMethod")
+        excludePackagesField.emptyText.setText("E.g. com.example.analytics, com.third.party")
+        excludeClassesField.emptyText.setText("E.g. com.example.HeavyClass")
+        excludeMethodsField.emptyText.setText("E.g. com.example.Util.expensiveMethod")
         buildVariantField.emptyText.setText("Leave empty or 'all' for all variants")
 
-        return FormBuilder.createFormBuilder()
+        pluginEnabledCheckBox.addActionListener { syncFeatureAvailability() }
+        autoInstrumentCheckBox.addActionListener { syncFeatureAvailability() }
+
+        // ── Search bar setup ───────────────────────────────────────────────
+        searchField.emptyText.setText("Search features…")
+        clearSearchButton.isVisible = false
+        clearSearchButton.addActionListener {
+            searchField.text = ""
+            searchField.requestFocusInWindow()
+        }
+        searchField.document.addDocumentListener(object : DocumentAdapter() {
+            override fun textChanged(e: DocumentEvent) {
+                val query = searchField.text
+                clearSearchButton.isVisible = query.isNotEmpty()
+                applyFilter(query)
+            }
+        })
+        val searchRow = JPanel(BorderLayout(JBUI.scale(4), 0)).apply {
+            isOpaque = false
+            add(searchField, BorderLayout.CENTER)
+            add(clearSearchButton, BorderLayout.EAST)
+        }
+
+        // ── Build filterable sections into filterableContent ───────────────
+        populateFilterableContent()
+
+        val panel = FormBuilder.createFormBuilder()
             .addComponent(
-                JBLabel("Feature Configuration").apply {
+                JBLabel("Feature configuration").apply {
                     font = JBUI.Fonts.label(16f).asBold()
                     foreground = WizardColors.accent
                     border = JBUI.Borders.emptyBottom(2)
@@ -79,75 +167,13 @@ class FeatureToggleStep {
                     border = JBUI.Borders.emptyBottom(4)
                 }
             )
-            // ── Global ────────────────────────────────────────────────────────
-            .addComponent(TitledSeparator("Global"))
-            .addComponent(checkboxItem(pluginEnabledCheckBox,
-                "Unchecking disables bytecode instrumentation but keeps the OneAgent SDK dependency."))
-            // ── Instrumentation ───────────────────────────────────────────────
-            .addComponent(TitledSeparator("Instrumentation"))
-            .addComponent(checkboxItem(autoInstrumentCheckBox,
-                "Transforms bytecode at compile time for automatic capture of HTTP, lifecycle, and Compose events."))
-            .addVerticalGap(4)
-            .addComponent(checkboxItem(autoStartEnabledCheckBox,
-                "OneAgent auto-starts in Application.onCreate. Disable for Direct Boot apps — " +
-                "a manual startup snippet will be shown in the summary."))
-            // ── Monitoring Sections ───────────────────────────────────────────
-            .addComponent(TitledSeparator("Monitoring Sections"))
-            .addComponent(checkboxItem(userActionsCheckBox,
-                "Track user taps, swipes, and Compose interactions."))
-            .addVerticalGap(4)
-            .addComponent(checkboxItem(webRequestsCheckBox,
-                "Monitor HttpURLConnection, OkHttp v3/4/5 requests automatically."))
-            .addVerticalGap(4)
-            .addComponent(checkboxItem(lifecycleCheckBox,
-                "Track Activity/Fragment display and app start events."))
-            .addVerticalGap(4)
-            .addComponent(checkboxItem(crashReportingCheckBox,
-                "Capture uncaught exceptions with full stack traces (not sent if older than 10 min)."))
-            // ── Compose & Behavioral Events ───────────────────────────────────
-            .addComponent(TitledSeparator("Compose & Behavioral Events"))
-            .addComponent(checkboxItem(composeEnabledCheckBox,
-                "Enabled by default from plugin 8.271+. Instruments Compose clickable, " +
-                "swipeable, slider, pager, and pull-refresh."))
-            .addVerticalGap(4)
-            .addComponent(checkboxItem(rageTapCheckBox,
-                "Detect frustrated users repeatedly tapping an unresponsive area."))
-            // ── Privacy ───────────────────────────────────────────────────────
-            .addComponent(TitledSeparator("Privacy"))
-            .addComponent(checkboxItem(userOptInCheckBox,
-                "Require explicit user consent before collecting data (GDPR). " +
-                "No data is sent until the app calls the OneAgent SDK opt-in API."))
-            .addVerticalGap(4)
-            .addComponent(checkboxItem(namePrivacyCheckBox,
-                "Masks autogenerated user action names to prevent PII leakage. " +
-                "Available from plugin 8.249+. Reduces Compose metadata captured."))
-            .addVerticalGap(4)
-            .addComponent(checkboxItem(locationMonitoringCheckBox,
-                "Appends already-processed location data (truncated to ~1 km). " +
-                "OneAgent will NOT request location permissions."))
-            .addVerticalGap(4)
-            .addComponent(checkboxItem(hybridMonitoringCheckBox,
-                "Monitor web content in WebViews (requires Dynatrace JS agent on your pages)."))
-            // ── Advanced ──────────────────────────────────────────────────────
-            .addComponent(TitledSeparator("Advanced"))
-            .addComponent(checkboxItem(agentBehaviorLbCheckBox,
-                "Enables client-side load balancing between multiple ActiveGates at startup."))
-            .addVerticalGap(4)
-            .addComponent(checkboxItem(agentBehaviorGrailCheckBox,
-                "Activates New RUM Experience (Grail) on first app start " +
-                "(can be overridden by cluster config)."))
-            .addVerticalGap(4)
-            .addComponent(checkboxItem(strictModeCheckBox,
-                "When enabled the build fails if a variant has no matching Dynatrace config — " +
-                "forces full coverage."))
-            // ── Session Replay ────────────────────────────────────────────────
-            .addComponent(TitledSeparator("Session Replay"))
-            .addComponent(checkboxItem(sessionReplayCheckBox,
-                "Records screen content and user interactions for visual session playback. " +
-                "Requires a Session Replay license. Emits sessionReplay.enabled(true) — " +
-                "available from plugin 8.281+."))
-            // ── Exclusions ────────────────────────────────────────────────────
-            .addComponent(TitledSeparator("Exclusions (comma-separated)"))
+            .addComponent(instrumentationStatusLabel.apply { border = JBUI.Borders.emptyBottom(4) })
+            .addComponent(searchRow)
+            .addVerticalGap(6)
+            // All filterable sections live here
+            .addComponent(filterableContent)
+            // ── Exclusions (always visible) ───────────────────────────────
+            .addComponent(TitledSeparator("Exclusions (Comma-Separated)"))
             .addLabeledComponent(JBLabel("Exclude packages:"),
                 fieldWithHint(excludePackagesField,
                     "Skips all classes in the listed packages."), true)
@@ -159,23 +185,208 @@ class FeatureToggleStep {
             .addLabeledComponent(JBLabel("Exclude methods:"),
                 fieldWithHint(excludeMethodsField,
                     "Use \$ to escape inner classes, e.g. com.example.Outer\$Inner."), true)
-            // ── Build Variant ─────────────────────────────────────────────────
+            // ── Build Variant (always visible) ────────────────────────────
             .addComponent(TitledSeparator("Build Variant"))
             .addLabeledComponent(JBLabel("Variant filter:"),
                 fieldWithHint(buildVariantField,
                     "Restrict instrumentation to a specific variant (regex). " +
                     "Leave blank for all variants."), true)
-            // ── Documentation ─────────────────────────────────────────────────
+            // ── Documentation (always visible) ────────────────────────────
             .addComponent(TitledSeparator("Documentation"))
             .addComponent(DocumentationLinks.createLinkLabel("Configure Plugin for Instrumentation", DocumentationLinks.CONFIGURE_PLUGIN))
             .addComponent(DocumentationLinks.createLinkLabel("Monitoring Capabilities", DocumentationLinks.MONITORING_CAPABILITIES))
-            .addComponent(DocumentationLinks.createLinkLabel("Crash Reporting", DocumentationLinks.CRASH_REPORTING))
+            .addComponent(DocumentationLinks.createLinkLabel("Crash, ANR & Native Crash Reporting", DocumentationLinks.ERROR_CRASH_REPORTING))
             .addComponent(DocumentationLinks.createLinkLabel("User Privacy & Opt-In", DocumentationLinks.USER_OPT_IN))
+            .addComponent(DocumentationLinks.createLinkLabel("Privacy & Data Collection", DocumentationLinks.PRIVACY_DATA_COLLECTION))
+            .addComponent(DocumentationLinks.createLinkLabel("Web Request Monitoring", DocumentationLinks.WEB_REQUEST_MONITORING))
+            .addComponent(DocumentationLinks.createLinkLabel("Custom Events", DocumentationLinks.CUSTOM_EVENTS))
+            .addComponent(DocumentationLinks.createLinkLabel("User & Session Management", DocumentationLinks.USER_SESSION_MANAGEMENT))
             .addComponent(DocumentationLinks.createLinkLabel("Adjust OneAgent Configuration", DocumentationLinks.ADJUST_ONEAGENT))
             .addComponent(DocumentationLinks.createLinkLabel("Multi-Module Projects", DocumentationLinks.MULTI_MODULE))
+            .addComponent(DocumentationLinks.createLinkLabel("Support & Limitations", DocumentationLinks.SUPPORT_LIMITATIONS))
             .addVerticalGap(8)
             .panel
             .also { it.border = JBUI.Borders.empty(8, 12, 12, 12) }
+
+        syncFeatureAvailability()
+        return panel
+    }
+
+    /**
+     * Populates [filterableContent] with all filterable sections (Global → Debug).
+     * Each row stores its visible-text keywords for case-insensitive matching.
+     */
+    private fun populateFilterableContent() {
+        filterSections.clear()
+        filterableContent.removeAll()
+
+        /** Registers a separator + rows as a named section and appends them to the panel. */
+        fun section(title: String, build: MutableList<FilterRow>.() -> Unit) {
+            val sep = TitledSeparator(title).also {
+                it.alignmentX = Component.LEFT_ALIGNMENT
+                filterableContent.add(it)
+            }
+            val rows = mutableListOf<FilterRow>()
+            rows.build()
+            filterSections.add(FilterSection(sep, rows))
+        }
+
+        /** Creates a checkbox row, registers its keywords, and appends it. */
+        fun MutableList<FilterRow>.row(
+            checkbox: JBCheckBox,
+            hint: String,
+            extraKeywords: String = ""
+        ) {
+            val panel = checkboxItem(checkbox, hint).also {
+                it.alignmentX = Component.LEFT_ALIGNMENT
+                filterableContent.add(it)
+            }
+            add(FilterRow(panel, "${checkbox.text} $hint $extraKeywords".lowercase()))
+        }
+
+        section("Global") {
+            row(pluginEnabledCheckBox,
+                "Unchecking disables bytecode instrumentation but keeps the OneAgent SDK dependency.",
+                "pluginEnabled kill-switch disable all")
+        }
+
+        section("Instrumentation") {
+            row(autoInstrumentCheckBox,
+                "Transforms bytecode at compile time for automatic capture of HTTP, lifecycle, and Compose events.",
+                "autoInstrument bytecode transform compile")
+            row(autoStartEnabledCheckBox,
+                "OneAgent auto-starts in Application.onCreate. Disable for Direct Boot apps — " +
+                "a manual startup snippet will be shown in the summary.",
+                "autoStart startup onCreate direct boot manual")
+        }
+
+        section("Monitoring Sections") {
+            row(userActionsCheckBox,
+                "Track user taps, swipes, and Compose interactions.",
+                "userActions tap swipe gesture click UI")
+            row(webRequestsCheckBox,
+                "Monitor HttpURLConnection, OkHttp v3/4/5 requests automatically.",
+                "webRequests http network okhttp retrofit request")
+            row(lifecycleCheckBox,
+                "Track Activity/Fragment display and app start events.",
+                "lifecycle activity fragment app start")
+            row(crashReportingCheckBox,
+                "Capture uncaught exceptions with full stack traces (not sent if older than 10 min).",
+                "crash exception stacktrace uncaught crashReporting")
+            row(anrReportingCheckBox,
+                "Detect Application Not Responding events on Android 11+. " +
+                "Requires app restart within 10 min to send the event.",
+                "ANR not responding freeze hang android 11")
+            row(nativeCrashReportingCheckBox,
+                "Capture C/C++ (NDK) crashes on Android 11+. " +
+                "Requires app restart within 10 min to send the event.",
+                "native crash NDK C++ nativeCrashReporting android 11")
+        }
+
+        section("Compose & Behavioral Events") {
+            row(composeEnabledCheckBox,
+                "Enabled by default from plugin 8.271+. Instruments Compose clickable, " +
+                "swipeable, slider, pager, and pull-refresh.",
+                "Jetpack Compose composable composeEnabled UI")
+            row(rageTapCheckBox,
+                "Detect frustrated users repeatedly tapping an unresponsive area.",
+                "rage tap frustrated behavior detectRageTaps behavioral")
+        }
+
+        section("Privacy") {
+            row(userOptInCheckBox,
+                "Require explicit user consent before collecting data (GDPR). " +
+                "No data is sent until the app calls the OneAgent SDK opt-in API.",
+                "GDPR consent opt-in privacy userOptIn")
+            row(namePrivacyCheckBox,
+                "Masks autogenerated user action names to prevent PII leakage. " +
+                "Available from plugin 8.249+. Reduces Compose metadata captured.",
+                "PII mask privacy namePrivacy action names")
+            row(locationMonitoringCheckBox,
+                "Appends already-processed location data (truncated to ~1 km). " +
+                "OneAgent will NOT request location permissions.",
+                "GPS location coordinates geo locationMonitoring")
+            row(hybridMonitoringCheckBox,
+                "Monitor web content in WebViews (requires Dynatrace JS agent on your pages).",
+                "WebView hybrid web monitoring hybridMonitoring webview")
+        }
+
+        section("Advanced") {
+            row(agentBehaviorLbCheckBox,
+                "Enables client-side load balancing between multiple ActiveGates at startup.",
+                "load balancing ActiveGate startup agentBehavior loadBalancing")
+            row(agentBehaviorGrailCheckBox,
+                "Activates New RUM Experience (Grail) on first app start " +
+                "(can be overridden by cluster config).",
+                "Grail RUM experience new rum grail agentBehavior")
+            row(strictModeCheckBox,
+                "When enabled the build fails if a variant has no matching Dynatrace config — " +
+                "forces full coverage.",
+                "strict mode build fail variant strictMode")
+        }
+
+        section("Session Replay") {
+            row(sessionReplayCheckBox,
+                "Records screen content and user interactions for visual session playback. " +
+                "Requires a Session Replay license. Emits sessionReplay.enabled(true) — " +
+                "available from plugin 8.281+.",
+                "session replay record screen visual playback video")
+        }
+
+        // Debug section — warning label + checkbox + link bundled into one collapsible row
+        section("Debug") {
+            val warningLabel = JBLabel(
+                "<html><b>⚠ Debug only — do not ship to production.</b> " +
+                "Remove this flag before building your Play Store or release APK. " +
+                "Extra logging may slow down the app and expose sensitive data in device logs.</html>"
+            ).apply {
+                foreground = WizardColors.error
+                border = JBUI.Borders.empty(2, 0, 4, 0)
+                alignmentX = Component.LEFT_ALIGNMENT
+            }
+            val checkRow = warningCheckboxItem(agentLoggingCheckBox,
+                "Writes verbose OneAgent output to Android Logcat (filter tag: <b>dtx|caa</b>). " +
+                "Emits <code>debug { agentLogging true }</code> in the Gradle config."
+            ).also { it.alignmentX = Component.LEFT_ALIGNMENT }
+            val linkLabel = DocumentationLinks.createLinkLabel(
+                "Enable debug logging", DocumentationLinks.DEBUG_LOGGING
+            ).also { (it as? JComponent)?.alignmentX = Component.LEFT_ALIGNMENT }
+
+            val debugGroup = JPanel().apply {
+                layout = BoxLayout(this, BoxLayout.Y_AXIS)
+                isOpaque = false
+                alignmentX = Component.LEFT_ALIGNMENT
+                add(warningLabel)
+                add(checkRow)
+                add(linkLabel)
+            }
+            filterableContent.add(debugGroup)
+            add(FilterRow(debugGroup,
+                "debug logging agent logcat production dtx caa agentLogging remove production"))
+        }
+    }
+
+    /**
+     * Filters [filterSections] in real time: shows/hides each row and its section
+     * separator based on whether [query] appears anywhere in the row's keywords.
+     * An empty query restores all rows.
+     */
+    private fun applyFilter(query: String) {
+        val trimmed = query.trim().lowercase()
+        val showAll = trimmed.isEmpty()
+
+        for (section in filterSections) {
+            var anyVisible = false
+            for (row in section.rows) {
+                val visible = showAll || row.keywords.contains(trimmed)
+                row.panel.isVisible = visible
+                if (visible) anyVisible = true
+            }
+            section.separator.isVisible = showAll || anyVisible
+        }
+
+        filterableContent.revalidate()
+        filterableContent.repaint()
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -196,10 +407,25 @@ class FeatureToggleStep {
         }
 
     /**
+     * Like [checkboxItem] but renders the hint in [WizardColors.error] red.
+     * Used for settings that must not be used in production (e.g. debug logging).
+     */
+    private fun warningCheckboxItem(checkBox: JBCheckBox, hint: String): JComponent =
+        JPanel(BorderLayout()).apply {
+            isOpaque = false
+            add(checkBox, BorderLayout.NORTH)
+            add(JBLabel("<html>$hint</html>").apply {
+                font = JBUI.Fonts.smallFont()
+                foreground = WizardColors.error
+                border = JBUI.Borders.empty(1, JBUI.scale(20), 4, 0)
+            }, BorderLayout.CENTER)
+        }
+
+    /**
      * Returns a panel stacking a text field above a small hint label.
      * The field expands to full width; the hint text wraps automatically.
      */
-    private fun fieldWithHint(field: JBTextField, hint: String): JComponent =
+    private fun fieldWithHint(field: JComponent, hint: String): JComponent =
         JPanel(BorderLayout(0, JBUI.scale(2))).apply {
             isOpaque = false
             field.maximumSize = Dimension(Int.MAX_VALUE, field.preferredSize.height)
@@ -210,6 +436,23 @@ class FeatureToggleStep {
             }, BorderLayout.CENTER)
         }
 
+    private fun syncFeatureAvailability() {
+        val pluginEnabled = pluginEnabledCheckBox.isSelected
+        autoInstrumentCheckBox.isEnabled = pluginEnabled
+
+        val autoInstrumentationActive = pluginEnabled && autoInstrumentCheckBox.isSelected
+        autoInstrumentationDependents.forEach { it.isEnabled = autoInstrumentationActive }
+
+        instrumentationStatusLabel.text = when {
+            !pluginEnabled ->
+                "Plugin setup remains in the generated Gradle files, but automatic capture options are paused until Plugin enabled is turned back on."
+            !autoInstrumentCheckBox.isSelected ->
+                "Auto-instrumentation is turned off. Monitoring toggles and exclusions are kept for later, but they are inactive until auto-instrumentation is re-enabled."
+            else ->
+                "Recommended setup is active: automatic capture is enabled, and the monitoring options below will be applied as selected."
+        }
+    }
+
     // ── Public API ────────────────────────────────────────────────────────────
 
     fun isPluginEnabled(): Boolean = pluginEnabledCheckBox.isSelected
@@ -219,6 +462,8 @@ class FeatureToggleStep {
     fun isWebRequestsEnabled(): Boolean = webRequestsCheckBox.isSelected
     fun isLifecycleEnabled(): Boolean = lifecycleCheckBox.isSelected
     fun isCrashReporting(): Boolean = crashReportingCheckBox.isSelected
+    fun isAnrReporting(): Boolean = anrReportingCheckBox.isSelected
+    fun isNativeCrashReporting(): Boolean = nativeCrashReportingCheckBox.isSelected
     fun isComposeEnabled(): Boolean = composeEnabledCheckBox.isSelected
     fun isRageTapDetection(): Boolean = rageTapCheckBox.isSelected
     fun isUserOptIn(): Boolean = userOptInCheckBox.isSelected
@@ -229,6 +474,7 @@ class FeatureToggleStep {
     fun isAgentBehaviorGrail(): Boolean = agentBehaviorGrailCheckBox.isSelected
     fun isStrictMode(): Boolean = strictModeCheckBox.isSelected
     fun isSessionReplayEnabled(): Boolean = sessionReplayCheckBox.isSelected
+    fun isAgentLogging(): Boolean = agentLoggingCheckBox.isSelected
     fun getExcludePackages(): String = excludePackagesField.text.trim()
     fun getExcludeClasses(): String = excludeClassesField.text.trim()
     fun getExcludeMethods(): String = excludeMethodsField.text.trim()
@@ -243,6 +489,8 @@ class FeatureToggleStep {
         webRequestsCheckBox.isSelected          = config.webRequestsEnabled
         lifecycleCheckBox.isSelected            = config.lifecycleEnabled
         crashReportingCheckBox.isSelected       = config.crashReporting
+        anrReportingCheckBox.isSelected         = config.anrReporting
+        nativeCrashReportingCheckBox.isSelected = config.nativeCrashReporting
         composeEnabledCheckBox.isSelected       = config.composeEnabled
         rageTapCheckBox.isSelected              = config.rageTapDetection
         userOptInCheckBox.isSelected            = config.userOptIn
@@ -253,9 +501,11 @@ class FeatureToggleStep {
         agentBehaviorGrailCheckBox.isSelected   = config.agentBehaviorGrail
         strictModeCheckBox.isSelected           = config.strictMode
         sessionReplayCheckBox.isSelected        = config.sessionReplayEnabled
+        agentLoggingCheckBox.isSelected         = config.agentLogging
         excludePackagesField.text               = config.excludePackages
         excludeClassesField.text                = config.excludeClasses
         excludeMethodsField.text                = config.excludeMethods
         buildVariantField.text                  = if (config.buildVariant == "all") "" else config.buildVariant
+        syncFeatureAvailability()
     }
 }

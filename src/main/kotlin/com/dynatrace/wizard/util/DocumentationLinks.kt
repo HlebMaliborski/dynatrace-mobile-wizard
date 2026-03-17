@@ -14,6 +14,7 @@ import javax.swing.JComponent
 object DocumentationLinks {
     // Root page for the instrumentation-via-plugin section
     private const val BASE = "https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications/instrument-android-app/instrumentation-via-plugin"
+    private const val MOBILE_BASE = "https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications"
 
     // BASE itself is the getting-started / overview page — do NOT append the slug again
     const val GETTING_STARTED         = BASE
@@ -23,11 +24,54 @@ object DocumentationLinks {
     const val CONFIGURE_PLUGIN        = "$BASE/configure-plugin-for-instrumentation"
     const val AUTO_INSTRUMENTATION    = "$BASE/configure-plugin-for-instrumentation"
     const val MONITORING_CAPABILITIES = "$BASE/monitoring-capabilities"
-    const val CRASH_REPORTING         = "$BASE/monitoring-capabilities"
+    const val CRASH_REPORTING         = "https://docs.dynatrace.com/docs/observe/digital-experience/new-rum-experience/mobile-frontends/android/id-07-error-and-crash-reporting"
     const val ADJUST_ONEAGENT         = "$BASE/adjust-oneagent-configuration"
     const val USER_OPT_IN             = "$BASE/adjust-oneagent-configuration"
     const val HYBRID_MONITORING       = "$BASE/adjust-oneagent-configuration"
     const val MULTI_MODULE            = "$BASE/configure-multi-module-projects"
+
+    // Privacy & data collection
+    const val PRIVACY_DATA_COLLECTION = "https://docs.dynatrace.com/docs/observe/digital-experience/new-rum-experience/mobile-frontends/android/id-04-privacy-and-data-collection"
+
+    // App performance
+    const val APP_PERFORMANCE         = "$MOBILE_BASE/app-performance-for-android"
+
+    // Web request monitoring
+    const val WEB_REQUEST_MONITORING  = "https://docs.dynatrace.com/docs/observe/digital-experience/new-rum-experience/mobile-frontends/android/id-06-web-request-performance"
+
+    // Error & crash reporting
+    const val ERROR_CRASH_REPORTING   = "https://docs.dynatrace.com/docs/observe/digital-experience/new-rum-experience/mobile-frontends/android/id-07-error-and-crash-reporting"
+
+    // Custom events
+    const val CUSTOM_EVENTS           = "https://docs.dynatrace.com/docs/observe/digital-experience/new-rum-experience/mobile-frontends/android/id-08-custom-events"
+
+    // User & session management
+    const val USER_SESSION_MANAGEMENT = "https://docs.dynatrace.com/docs/observe/digital-experience/new-rum-experience/mobile-frontends/android/id-09-user-and-session"
+
+    // OneAgent SDK manual instrumentation
+    const val MANUAL_SDK_INSTRUMENTATION =
+        "https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications/instrument-android-app/instrumentation-via-oneagent-sdk/manual-instrumentation"
+
+    // Adjust communication with OneAgent SDK (network security, headers, auth)
+    const val ADJUST_COMMUNICATION =
+        "https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications/instrument-android-app/instrumentation-via-oneagent-sdk/adjust-oneagent-communication"
+
+    // Standalone manual instrumentation (without Gradle plugin)
+    const val STANDALONE_INSTRUMENTATION =
+        "https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications/instrument-android-app/manually-instrument-application-oneagent-sdk-android"
+
+    // Debug logging
+    const val DEBUG_LOGGING = "https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications/instrument-android-app/debug-logging-oneagent"
+
+    const val SUPPORT_LIMITATIONS     = "https://docs.dynatrace.com/docs/observe/digital-experience/new-rum-experience/mobile-frontends/android/id-02-support-and-limitations"
+
+    // Build-specific limitations (anchor on support page)
+    const val BUILD_SPECIFIC_LIMITATIONS =
+        "https://docs.dynatrace.com/docs/shortlink/support-and-limitations-android#build-specific-limitations"
+
+    // Compatibility with other monitoring tools
+    const val COMPATIBILITY_MONITORING_TOOLS =
+        "https://docs.dynatrace.com/docs/shortlink/dynatrace-android-gradle-plugin-overview#compatibility-monitoring-tools"
 
     const val RELEASE_NOTES           = "https://docs.dynatrace.com/docs/whats-new/oneagent-mobile"
     const val SUPPORTED_TECHNOLOGIES  = "https://docs.dynatrace.com/docs/ingest-from/technology-support"

@@ -22,6 +22,8 @@ data class DynatraceConfig(
     val autoInstrument: Boolean = true,     // config-level enabled flag
     val pluginEnabled: Boolean = true,      // dynatrace { pluginEnabled false } — global kill-switch
     val crashReporting: Boolean = true,
+    val anrReporting: Boolean = true,               // agentBehavior.anrReporting false
+    val nativeCrashReporting: Boolean = true,       // agentBehavior.nativeCrashReporting false
     val hybridMonitoring: Boolean = false,
     // --- monitoring sections ---
     val userActionsEnabled: Boolean = true,
@@ -38,6 +40,8 @@ data class DynatraceConfig(
     val agentBehaviorGrail: Boolean = false,          // agentBehavior { startupWithGrailEnabled true }
     // --- session replay ---
     val sessionReplayEnabled: Boolean = false,        // sessionReplay.enabled(true)
+    // --- debug (NOT for production) ---
+    val agentLogging: Boolean = false,                // debug { agentLogging true } — remove before PlayStore build
     // --- exclusions ---
     val excludePackages: String = "",   // comma-separated package names
     val excludeClasses: String = "",    // comma-separated fully-qualified class names

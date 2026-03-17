@@ -1,6 +1,7 @@
 package com.dynatrace.wizard.service
 
 import com.dynatrace.wizard.model.DynatraceConfig
+import com.dynatrace.wizard.service.GradleModificationService.Companion.buildDynatraceBlockKts
 import com.dynatrace.wizard.service.ProjectDetectionService.SetupFlow
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.project.Project
@@ -19,15 +20,18 @@ import java.nio.charset.StandardCharsets
  *      → classpath entry goes into the project-level buildscript block;
  *        `apply plugin` + dynatrace {} block go into the **app-level** file.
  */
-class GradleModificationService(private val project: Project) {
+class GradleModificationService(private val project: Project?) {
 
     companion object {
         /** Plugin DSL id used in `plugins {}` block and `apply plugin` statements. */
         private const val DYNATRACE_PLUGIN_ID = "com.dynatrace.instrumentation"
+
         /** Module-level plugin id — used in each app module for multi-app projects. */
         private const val DYNATRACE_MODULE_PLUGIN_ID = "com.dynatrace.instrumentation.module"
+
         /** Maven group/artifact used in buildscript classpath entries. */
         private const val DYNATRACE_MAVEN_ARTIFACT = "com.dynatrace.tools.android:gradle-plugin"
+
         /**
          * Use 8.+ to allow automatic minor-version updates.
          * Major version upgrades must be done manually per Dynatrace guidance.
@@ -51,6 +55,142 @@ class GradleModificationService(private val project: Project) {
             content
                 .replace(Regex("""/\*.*?\*/""", setOf(RegexOption.DOT_MATCHES_ALL)), "")
                 .replace(Regex("""(?<!:)//[^\n]*"""), "")
+
+        /** Generates the `dynatrace { }` block for Kotlin DSL from [config]. */
+        internal fun buildDynatraceBlockKts(config: DynatraceConfig): String {
+            val variantName =
+                if (config.buildVariant == "all" || config.buildVariant.isBlank()) "sampleConfig" else config.buildVariant
+            val variantFilter =
+                if (config.buildVariant == "all" || config.buildVariant.isBlank()) ".*" else config.buildVariant
+            return buildString {
+                appendLine("dynatrace {")
+                if (!config.strictMode) appendLine("    strictMode(false)")
+                if (!config.pluginEnabled) appendLine("    pluginEnabled(false)")
+                appendLine("    configurations {")
+                appendLine("        create(\"$variantName\") {")
+                appendLine("            variantFilter(\"$variantFilter\")")
+                if (!config.autoInstrument) appendLine("            enabled(false)")
+                appendLine("            autoStart {")
+                appendLine("                applicationId(\"${config.applicationId}\")")
+                appendLine("                beaconUrl(\"${config.beaconUrl}\")")
+                if (config.userOptIn) appendLine("                userOptIn(true)")
+                if (!config.autoStartEnabled) appendLine("                enabled(false)")
+                appendLine("            }")
+                val needsUserActionsBlock = !config.userActionsEnabled || config.namePrivacy || !config.composeEnabled
+                if (needsUserActionsBlock) {
+                    appendLine("            userActions {")
+                    if (!config.userActionsEnabled) appendLine("                enabled(false)")
+                    if (config.namePrivacy) appendLine("                namePrivacy(true)")
+                    if (!config.composeEnabled) appendLine("                composeEnabled(false)")
+                    appendLine("            }")
+                }
+                if (!config.webRequestsEnabled) appendLine("            webRequests { enabled(false) }")
+                if (!config.lifecycleEnabled) appendLine("            lifecycle { enabled(false) }")
+                if (!config.crashReporting) appendLine("            crashReporting(false)")
+                if (!config.anrReporting) appendLine("            anrReporting(false)")
+                if (!config.nativeCrashReporting) appendLine("            nativeCrashReporting(false)")
+                if (config.hybridMonitoring) appendLine("            hybridMonitoring(true)")
+                if (config.locationMonitoring) appendLine("            locationMonitoring(true)")
+                if (config.rageTapDetection) {
+                    appendLine("            behavioralEvents {")
+                    appendLine("                detectRageTaps(true)")
+                    appendLine("            }")
+                }
+                if (config.agentBehaviorLoadBalancing || config.agentBehaviorGrail) {
+                    appendLine("            agentBehavior {")
+                    if (config.agentBehaviorLoadBalancing) appendLine("                startupLoadBalancing(true)")
+                    if (config.agentBehaviorGrail) appendLine("                startupWithGrailEnabled(true)")
+                    appendLine("            }")
+                }
+                if (config.sessionReplayEnabled) appendLine("            sessionReplay.enabled(true)")
+                if (config.agentLogging) {
+                    appendLine("            debug {")
+                    appendLine("                agentLogging(true)")
+                    appendLine("            }")
+                }
+                val packages = config.excludePackages.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                val classes = config.excludeClasses.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                val methods = config.excludeMethods.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                if (packages.isNotEmpty() || classes.isNotEmpty() || methods.isNotEmpty()) {
+                    appendLine("            exclude {")
+                    if (packages.isNotEmpty()) appendLine("                packages(${packages.joinToString(", ") { "\"$it\"" }})")
+                    if (classes.isNotEmpty()) appendLine("                classes(${classes.joinToString(", ") { "\"$it\"" }})")
+                    if (methods.isNotEmpty()) appendLine("                methods(${methods.joinToString(", ") { "\"$it\"" }})")
+                    appendLine("            }")
+                }
+                appendLine("        }")
+                appendLine("    }")
+                append("}")
+            }
+        }
+
+        /** Generates the `dynatrace { }` block for Groovy DSL from [config]. */
+        internal fun buildDynatraceBlockGroovy(config: DynatraceConfig): String {
+            val variantName =
+                if (config.buildVariant == "all" || config.buildVariant.isBlank()) "sampleConfig" else config.buildVariant
+            val variantFilter =
+                if (config.buildVariant == "all" || config.buildVariant.isBlank()) ".*" else config.buildVariant
+            return buildString {
+                appendLine("dynatrace {")
+                if (!config.strictMode) appendLine("    strictMode false")
+                if (!config.pluginEnabled) appendLine("    pluginEnabled false")
+                appendLine("    configurations {")
+                appendLine("        $variantName {")
+                appendLine("            variantFilter '$variantFilter'")
+                if (!config.autoInstrument) appendLine("            enabled false")
+                appendLine("            autoStart {")
+                appendLine("                applicationId '${config.applicationId}'")
+                appendLine("                beaconUrl '${config.beaconUrl}'")
+                if (config.userOptIn) appendLine("                userOptIn true")
+                if (!config.autoStartEnabled) appendLine("                enabled false")
+                appendLine("            }")
+                val needsUserActionsBlock = !config.userActionsEnabled || config.namePrivacy || !config.composeEnabled
+                if (needsUserActionsBlock) {
+                    appendLine("            userActions {")
+                    if (!config.userActionsEnabled) appendLine("                enabled false")
+                    if (config.namePrivacy) appendLine("                namePrivacy true")
+                    if (!config.composeEnabled) appendLine("                composeEnabled false")
+                    appendLine("            }")
+                }
+                if (!config.webRequestsEnabled) appendLine("            webRequests { enabled false }")
+                if (!config.lifecycleEnabled) appendLine("            lifecycle { enabled false }")
+                if (!config.crashReporting) appendLine("            crashReporting false")
+                if (!config.anrReporting) appendLine("            anrReporting false")
+                if (!config.nativeCrashReporting) appendLine("            nativeCrashReporting false")
+                if (config.hybridMonitoring) appendLine("            hybridMonitoring true")
+                if (config.locationMonitoring) appendLine("            locationMonitoring true")
+                if (config.rageTapDetection) {
+                    appendLine("            behavioralEvents {")
+                    appendLine("                detectRageTaps true")
+                    appendLine("            }")
+                }
+                if (config.agentBehaviorLoadBalancing || config.agentBehaviorGrail) {
+                    appendLine("            agentBehavior {")
+                    if (config.agentBehaviorLoadBalancing) appendLine("                startupLoadBalancing true")
+                    if (config.agentBehaviorGrail) appendLine("                startupWithGrailEnabled true")
+                    appendLine("            }")
+                }
+                if (config.sessionReplayEnabled) appendLine("            sessionReplay.enabled true")
+                if (config.agentLogging) {
+                    appendLine("            debug {")
+                    appendLine("                agentLogging true")
+                    appendLine("            }")
+                }
+                val packages = config.excludePackages.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                val classes = config.excludeClasses.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                val methods = config.excludeMethods.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                if (packages.isNotEmpty() || classes.isNotEmpty() || methods.isNotEmpty()) {
+                    appendLine("            exclude {")
+                    if (packages.isNotEmpty()) appendLine("                packages ${packages.joinToString(", ") { "\"$it\"" }}")
+                    if (classes.isNotEmpty()) appendLine("                classes ${classes.joinToString(", ") { "\"$it\"" }}")
+                    if (methods.isNotEmpty()) appendLine("                methods ${methods.joinToString(", ") { "\"$it\"" }}")
+                    appendLine("            }")
+                }
+                appendLine("        }")
+                appendLine("    }")
+                append("}")
+            }
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -104,7 +244,7 @@ class GradleModificationService(private val project: Project) {
     fun configureGradleFiles(projectInfo: ProjectDetectionService.ProjectInfo, config: DynatraceConfig) {
         when (projectInfo.setupFlow) {
             SetupFlow.FEATURE_MODULES -> configureFeatureModules(projectInfo, config)
-            SetupFlow.MULTI_APP       -> configureMultiAppModules(projectInfo, config)
+            SetupFlow.MULTI_APP -> configureMultiAppModules(projectInfo, config)
             else -> configureGradleFiles(
                 projectInfo.projectBuildFile,
                 projectInfo.appBuildFile,
@@ -186,7 +326,7 @@ class GradleModificationService(private val project: Project) {
             val content = String(moduleFile.contentsToByteArray(), StandardCharsets.UTF_8)
             if (content.contains(sharedFileName)) return@runWriteCommandAction
             val applyLine = if (isKts) "\napply(from = \"../$sharedFileName\")\n"
-                            else       "\napply from: '../$sharedFileName'\n"
+            else "\napply from: '../$sharedFileName'\n"
             moduleFile.setBinaryContent((content.trimEnd() + applyLine).toByteArray(StandardCharsets.UTF_8))
         })
     }
@@ -260,7 +400,7 @@ class GradleModificationService(private val project: Project) {
                     content = removeClasspathEntry(content)
                 }
                 val modified = if (isKts) applyPluginDslKts(content, config)
-                               else      applyPluginDslGroovy(content, config)
+                else applyPluginDslGroovy(content, config)
                 if (modified != content)
                     projectBuildFile.setBinaryContent(modified.toByteArray(StandardCharsets.UTF_8))
             })
@@ -278,7 +418,7 @@ class GradleModificationService(private val project: Project) {
                     val content = String(buildFile.contentsToByteArray(), StandardCharsets.UTF_8)
                     val stripped = stripComments(content)
                     val hasCoordinator = stripped.contains(DYNATRACE_PLUGIN_ID)
-                                     && !stripped.contains(DYNATRACE_MAVEN_ARTIFACT)
+                            && !stripped.contains(DYNATRACE_MAVEN_ARTIFACT)
                     if (hasCoordinator) {
                         val modified = removeDynatraceBlock(removeCoordinatorLine(content))
                         if (modified != content)
@@ -324,11 +464,20 @@ class GradleModificationService(private val project: Project) {
             if (!stripComments(content).contains(DYNATRACE_MODULE_PLUGIN_ID)) return@runWriteCommandAction
             var modified = content
                 // plugins {} block form
-                .replace(Regex("""[ \t]*id\s*[("']+com\.dynatrace\.instrumentation\.module[^"'\n]*["')][^\n]*\n?"""), "")
+                .replace(
+                    Regex("""[ \t]*id\s*[("']+com\.dynatrace\.instrumentation\.module[^"'\n]*["')][^\n]*\n?"""),
+                    ""
+                )
                 // apply(plugin = "...") form
-                .replace(Regex("""[ \t]*apply\s*\(\s*plugin\s*=\s*["']com\.dynatrace\.instrumentation\.module["'][^)]*\)[^\n]*\n?"""), "")
+                .replace(
+                    Regex("""[ \t]*apply\s*\(\s*plugin\s*=\s*["']com\.dynatrace\.instrumentation\.module["'][^)]*\)[^\n]*\n?"""),
+                    ""
+                )
                 // apply plugin: '...' form
-                .replace(Regex("""[ \t]*apply\s+plugin\s*:\s*["']com\.dynatrace\.instrumentation\.module["'][^\n]*\n?"""), "")
+                .replace(
+                    Regex("""[ \t]*apply\s+plugin\s*:\s*["']com\.dynatrace\.instrumentation\.module["'][^\n]*\n?"""),
+                    ""
+                )
             if (modified != content)
                 file.setBinaryContent(modified.toByteArray(StandardCharsets.UTF_8))
         })
@@ -343,7 +492,8 @@ class GradleModificationService(private val project: Project) {
         WriteCommandAction.runWriteCommandAction(project, "Remove Dynatrace Block from Module", null, {
             val content = String(file.contentsToByteArray(), StandardCharsets.UTF_8)
             if (!stripComments(content).contains("dynatrace {") &&
-                !stripComments(content).contains("DynatraceExtension")) return@runWriteCommandAction
+                !stripComments(content).contains("DynatraceExtension")
+            ) return@runWriteCommandAction
             val modified = removeDynatraceBlock(content)
             if (modified != content)
                 file.setBinaryContent(modified.toByteArray(StandardCharsets.UTF_8))
@@ -393,14 +543,19 @@ class GradleModificationService(private val project: Project) {
                 val lineToInsert = when {
                     hasPluginsBlock && isKts && includeVersion ->
                         """    id("$DYNATRACE_MODULE_PLUGIN_ID") version "$DYNATRACE_PLUGIN_VERSION""""
+
                     hasPluginsBlock && isKts ->
                         """    id("$DYNATRACE_MODULE_PLUGIN_ID")"""
+
                     hasPluginsBlock && includeVersion ->
                         """    id '$DYNATRACE_MODULE_PLUGIN_ID' version '$DYNATRACE_PLUGIN_VERSION'"""
+
                     hasPluginsBlock ->
                         """    id '$DYNATRACE_MODULE_PLUGIN_ID'"""
+
                     isKts ->
                         """apply(plugin = "$DYNATRACE_MODULE_PLUGIN_ID")"""
+
                     else ->
                         "apply plugin: '$DYNATRACE_MODULE_PLUGIN_ID'"
                 }
@@ -433,9 +588,9 @@ class GradleModificationService(private val project: Project) {
         val lines = content.lines().toMutableList()
         val androidAppRegex = Regex(
             """com\.android\.application""" +
-            """|androidApplication\(\)""" +
-            """|"android"""" +
-            """|alias\s*\(\s*\S*android[._]application\S*\s*\)"""
+                    """|androidApplication\(\)""" +
+                    """|"android"""" +
+                    """|alias\s*\(\s*\S*android[._]application\S*\s*\)"""
         )
         val idx = lines.indexOfFirst { line ->
             !line.trimStart().startsWith("//") && androidAppRegex.containsMatchIn(line)
@@ -472,7 +627,9 @@ class GradleModificationService(private val project: Project) {
     /** Returns true if mavenCentral() is declared (and not commented out) in the file. */
     fun hasMavenCentral(file: VirtualFile): Boolean = try {
         stripComments(String(file.contentsToByteArray())).contains("mavenCentral()")
-    } catch (_: Exception) { false }
+    } catch (_: Exception) {
+        false
+    }
 
     /**
      * Reads an existing Dynatrace configuration from a Gradle build file.
@@ -492,25 +649,36 @@ class GradleModificationService(private val project: Project) {
     ): Map<String, com.dynatrace.wizard.model.ModuleCredentials> =
         appModules.mapNotNull { module ->
             try {
-                val raw     = String(module.buildFile.contentsToByteArray(), StandardCharsets.UTF_8)
+                val raw = String(module.buildFile.contentsToByteArray(), StandardCharsets.UTF_8)
                 val content = stripComments(raw)
                 if (!content.contains("dynatrace {") && !content.contains("DynatraceExtension")) return@mapNotNull null
                 fun readString(key: String): String =
                     Regex("""$key[\s(]*["']([^"']+)["']""").find(content)
                         ?.groupValues?.get(1)?.trim() ?: ""
-                val appId     = readString("applicationId")
+
+                val appId = readString("applicationId")
                 val beaconUrl = readString("beaconUrl")
                 if (appId.isBlank() && beaconUrl.isBlank()) return@mapNotNull null
                 module.name to com.dynatrace.wizard.model.ModuleCredentials(
                     appId = appId, beaconUrl = beaconUrl
                 )
-            } catch (_: Exception) { null }
+            } catch (_: Exception) {
+                null
+            }
         }.toMap()
 
     fun readExistingConfig(file: VirtualFile): DynatraceConfig? {
+        val raw = String(file.contentsToByteArray(), StandardCharsets.UTF_8)
+        return readExistingConfigFromString(raw)
+    }
+
+    /**
+     * Parses a Dynatrace configuration from the raw [gradleContent] string.
+     * Exposed for unit-testing without a real [VirtualFile].
+     */
+    fun readExistingConfigFromString(gradleContent: String): DynatraceConfig? {
         return try {
-            val raw     = String(file.contentsToByteArray(), StandardCharsets.UTF_8)
-            val content = stripComments(raw)   // ignore commented-out declarations
+            val content = stripComments(gradleContent)   // ignore commented-out declarations
             // Recognize both `dynatrace {` and `configure<…DynatraceExtension…> {` as config blocks.
             if (!content.contains("dynatrace {") && !content.contains("DynatraceExtension")) return null
 
@@ -539,71 +707,76 @@ class GradleModificationService(private val project: Project) {
                     .map { it.groupValues[1] }.joinToString(", ")
             }
 
-            val appId    = readString("applicationId")
+            val appId = readString("applicationId")
             val beaconUrl = readString("beaconUrl")
             if (appId.isBlank() && beaconUrl.isBlank()) return null
 
             // --- Variant ---
             val variantFilter = readString("variantFilter")
-            val buildVariant  = if (variantFilter.isBlank() || variantFilter == ".*") "all" else variantFilter
+            val buildVariant = if (variantFilter.isBlank() || variantFilter == ".*") "all" else variantFilter
 
             // --- Extract sub-blocks (all are non-nested) ---
-            val autoStartBlock     = extractBlock("autoStart")
-            val userActionsBlock   = extractBlock("userActions")
-            val webRequestsBlock   = extractBlock("webRequests")
-            val lifecycleBlock     = extractBlock("lifecycle")
+            val autoStartBlock = extractBlock("autoStart")
+            val userActionsBlock = extractBlock("userActions")
+            val webRequestsBlock = extractBlock("webRequests")
+            val lifecycleBlock = extractBlock("lifecycle")
             val agentBehaviorBlock = extractBlock("agentBehavior")
-            val behavioralBlock    = extractBlock("behavioralEvents")
-            val excludeBlock       = extractBlock("exclude")
+            val behavioralBlock = extractBlock("behavioralEvents")
+            val excludeBlock = extractBlock("exclude")
+            val debugBlock = extractBlock("debug")
 
             // Strip sub-blocks so the remaining content only has config-level flags.
             // This lets us isolate the config-level `enabled(false)` that controls autoInstrument.
             val stripped = content
-                .replace(Regex("""autoStart\s*\{[^}]*}""",    RegexOption.DOT_MATCHES_ALL), "")
-                .replace(Regex("""userActions\s*\{[^}]*}""",  RegexOption.DOT_MATCHES_ALL), "")
-                .replace(Regex("""webRequests\s*\{[^}]*}""",  RegexOption.DOT_MATCHES_ALL), "")
-                .replace(Regex("""lifecycle\s*\{[^}]*}""",    RegexOption.DOT_MATCHES_ALL), "")
+                .replace(Regex("""autoStart\s*\{[^}]*}""", RegexOption.DOT_MATCHES_ALL), "")
+                .replace(Regex("""userActions\s*\{[^}]*}""", RegexOption.DOT_MATCHES_ALL), "")
+                .replace(Regex("""webRequests\s*\{[^}]*}""", RegexOption.DOT_MATCHES_ALL), "")
+                .replace(Regex("""lifecycle\s*\{[^}]*}""", RegexOption.DOT_MATCHES_ALL), "")
 
             DynatraceConfig(
-                applicationId              = appId,
-                beaconUrl                  = beaconUrl,
+                applicationId = appId,
+                beaconUrl = beaconUrl,
                 // Global switches — emitted only when non-default, so absence = default (true)
-                pluginEnabled              = !hasFlag("pluginEnabled", false),
+                pluginEnabled = !hasFlag("pluginEnabled", false),
                 // Config-level enabled(false) means autoInstrument = false; check stripped content
-                autoInstrument             = !Regex("""enabled[\s(]*false""").containsMatchIn(stripped),
+                autoInstrument = !Regex("""enabled[\s(]*false""").containsMatchIn(stripped),
                 // autoStart sub-block
-                autoStartEnabled           = !hasFlagInBlock(autoStartBlock, "enabled", false),
+                autoStartEnabled = !hasFlagInBlock(autoStartBlock, "enabled", false),
                 // userOptIn may be inside autoStart (new approach) OR at configuration level
                 // (old snippet approach) — check both.
-                userOptIn                  = hasFlagInBlock(autoStartBlock, "userOptIn", true)
-                                          || hasFlag("userOptIn", true),
+                userOptIn = hasFlagInBlock(autoStartBlock, "userOptIn", true)
+                        || hasFlag("userOptIn", true),
                 // Monitoring sections
-                crashReporting             = !hasFlag("crashReporting", false),
-                hybridMonitoring           = hasFlag("hybridMonitoring", true),
-                userActionsEnabled         = !hasFlagInBlock(userActionsBlock, "enabled", false),
-                webRequestsEnabled         = !hasFlagInBlock(webRequestsBlock, "enabled", false),
-                lifecycleEnabled           = !hasFlagInBlock(lifecycleBlock, "enabled", false),
-                locationMonitoring         = hasFlag("locationMonitoring", true),
+                crashReporting = !hasFlag("crashReporting", false),
+                hybridMonitoring = hasFlag("hybridMonitoring", true),
+                userActionsEnabled = !hasFlagInBlock(userActionsBlock, "enabled", false),
+                webRequestsEnabled = !hasFlagInBlock(webRequestsBlock, "enabled", false),
+                lifecycleEnabled = !hasFlagInBlock(lifecycleBlock, "enabled", false),
+                locationMonitoring = hasFlag("locationMonitoring", true),
                 // userActions details
-                namePrivacy                = hasFlagInBlock(userActionsBlock, "namePrivacy", true),
-                composeEnabled             = !hasFlag("composeEnabled", false),
+                namePrivacy = hasFlagInBlock(userActionsBlock, "namePrivacy", true),
+                composeEnabled = !hasFlag("composeEnabled", false),
                 // Behavioral events
-                rageTapDetection           = hasFlagInBlock(behavioralBlock, "detectRageTaps", true),
+                rageTapDetection = hasFlagInBlock(behavioralBlock, "detectRageTaps", true),
                 // Agent behavior — handles both block form and dot-notation form
                 agentBehaviorLoadBalancing = hasFlagInBlock(agentBehaviorBlock, "startupLoadBalancing", true)
-                                          || Regex("""agentBehavior\.startupLoadBalancing[\s(]*true""").containsMatchIn(content),
-                agentBehaviorGrail         = hasFlagInBlock(agentBehaviorBlock, "startupWithGrailEnabled", true)
-                                          || Regex("""agentBehavior\.startupWithGrailEnabled[\s(]*true""").containsMatchIn(content),
+                        || Regex("""agentBehavior\.startupLoadBalancing[\s(]*true""").containsMatchIn(content),
+                agentBehaviorGrail = hasFlagInBlock(agentBehaviorBlock, "startupWithGrailEnabled", true)
+                        || Regex("""agentBehavior\.startupWithGrailEnabled[\s(]*true""").containsMatchIn(content),
                 // Session Replay — dot notation: sessionReplay.enabled(true) / sessionReplay.enabled true
-                sessionReplayEnabled       = Regex("""sessionReplay\.enabled[\s(]*true""").containsMatchIn(content),
+                sessionReplayEnabled = Regex("""sessionReplay\.enabled[\s(]*true""").containsMatchIn(content),
+                // Debug logging — debug { agentLogging true/agentLogging(true) }
+                agentLogging = hasFlagInBlock(debugBlock, "agentLogging", true),
                 // Exclusions
-                excludePackages            = readListValues(excludeBlock, "packages"),
-                excludeClasses             = readListValues(excludeBlock, "classes"),
-                excludeMethods             = readListValues(excludeBlock, "methods"),
-                buildVariant               = buildVariant,
-                strictMode                 = hasFlag("strictMode", true)
+                excludePackages = readListValues(excludeBlock, "packages"),
+                excludeClasses = readListValues(excludeBlock, "classes"),
+                excludeMethods = readListValues(excludeBlock, "methods"),
+                buildVariant = buildVariant,
+                strictMode = hasFlag("strictMode", true)
             )
-        } catch (_: Exception) { null }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -620,13 +793,20 @@ class GradleModificationService(private val project: Project) {
         val startMatch = findDynatraceBlockStart(content) ?: return content
         val openBraceIdx = content.indexOf('{', startMatch)
         if (openBraceIdx == -1) return content
-        var depth = 0; var blockEnd = -1
+        var depth = 0;
+        var blockEnd = -1
         for (i in openBraceIdx until content.length) {
-            when (content[i]) { '{' -> depth++; '}' -> { depth--; if (depth == 0) { blockEnd = i; break } } }
+            when (content[i]) {
+                '{' -> depth++; '}' -> {
+                depth--; if (depth == 0) {
+                    blockEnd = i; break
+                }
+            }
+            }
         }
         if (blockEnd == -1) return content
         val before = content.substring(0, startMatch).trimEnd()
-        val after  = content.substring(blockEnd + 1).trimStart('\n', '\r')
+        val after = content.substring(blockEnd + 1).trimStart('\n', '\r')
         return if (after.isBlank()) before else "$before\n\n$after"
     }
 
@@ -643,20 +823,24 @@ class GradleModificationService(private val project: Project) {
         val openBraceIdx = content.indexOf('{', blockStart)
         if (openBraceIdx == -1) return content.trimEnd() + "\n\n" + newBlock
 
-        var depth    = 0
+        var depth = 0
         var blockEnd = -1
         for (i in openBraceIdx until content.length) {
             when (content[i]) {
                 '{' -> depth++
-                '}' -> { depth--; if (depth == 0) { blockEnd = i; break } }
+                '}' -> {
+                    depth--; if (depth == 0) {
+                        blockEnd = i; break
+                    }
+                }
             }
         }
         if (blockEnd == -1) return content.trimEnd() + "\n\n" + newBlock
 
         val before = content.substring(0, blockStart).trimEnd()
-        val after  = content.substring(blockEnd + 1).trimStart('\n', '\r')
+        val after = content.substring(blockEnd + 1).trimStart('\n', '\r')
         return if (after.isBlank()) "$before\n\n$newBlock"
-               else "$before\n\n$newBlock\n\n$after"
+        else "$before\n\n$newBlock\n\n$after"
     }
 
     /**
@@ -676,7 +860,7 @@ class GradleModificationService(private val project: Project) {
         val regex = Regex("""dynatrace\s*\{|configure\s*<[^>]*DynatraceExtension[^>]*>\s*\{""")
         return regex.findAll(content).firstOrNull { match ->
             val lineStart = content.lastIndexOf('\n', match.range.first).coerceAtLeast(-1) + 1
-            val prefix    = content.substring(lineStart, match.range.first)
+            val prefix = content.substring(lineStart, match.range.first)
             !prefix.trimStart().startsWith("//")
         }?.range?.first
     }
@@ -706,7 +890,11 @@ class GradleModificationService(private val project: Project) {
                 for (i in openBraceIdx until content.length) {
                     when (content[i]) {
                         '{' -> depth++
-                        '}' -> { depth--; if (depth == 0) { blockEnd = i; break } }
+                        '}' -> {
+                            depth--; if (depth == 0) {
+                                blockEnd = i; break
+                            }
+                        }
                     }
                 }
                 if (blockEnd != -1) {
@@ -720,11 +908,11 @@ class GradleModificationService(private val project: Project) {
                         val lineStart = content.lastIndexOf('\n', buildscriptMatch.range.first)
                             .let { if (it == -1) 0 else it + 1 }
                         val before = content.substring(0, lineStart).trimEnd()
-                        val after  = content.substring(blockEnd + 1).trimStart('\n', '\r')
+                        val after = content.substring(blockEnd + 1).trimStart('\n', '\r')
                         return when {
-                            after.isBlank()  -> before
+                            after.isBlank() -> before
                             before.isBlank() -> after
-                            else             -> "$before\n\n$after"
+                            else -> "$before\n\n$after"
                         }
                     }
                 }
@@ -769,10 +957,12 @@ class GradleModificationService(private val project: Project) {
                 val pluginLine = """    id("$DYNATRACE_PLUGIN_ID") version "$DYNATRACE_PLUGIN_VERSION""""
                 result = PLUGINS_BLOCK_REGEX.replaceFirst(result, "$1\n$pluginLine")
             }
+
             hasMavenArtifact -> {
                 // Case 2: existing buildscript classpath approach → apply at root + configure<>
                 if (!stripped.contains("""apply(plugin = "$DYNATRACE_PLUGIN_ID")""") &&
-                    !stripped.contains("""apply(plugin = '$DYNATRACE_PLUGIN_ID')""")) {
+                    !stripped.contains("""apply(plugin = '$DYNATRACE_PLUGIN_ID')""")
+                ) {
                     result = addApplyStatementAfterPluginsBlock(result, isKts = true)
                 }
             }
@@ -805,10 +995,12 @@ class GradleModificationService(private val project: Project) {
                 val pluginLine = """    id '$DYNATRACE_PLUGIN_ID' version '$DYNATRACE_PLUGIN_VERSION'"""
                 result = PLUGINS_BLOCK_REGEX.replaceFirst(result, "$1\n$pluginLine")
             }
+
             hasMavenArtifact -> {
                 // Case 2: existing buildscript classpath approach → apply at root
                 if (!stripped.contains("apply plugin: '$DYNATRACE_PLUGIN_ID'") &&
-                    !stripped.contains("apply plugin: \"$DYNATRACE_PLUGIN_ID\"")) {
+                    !stripped.contains("apply plugin: \"$DYNATRACE_PLUGIN_ID\"")
+                ) {
                     result = addApplyStatementAfterPluginsBlock(result, isKts = false)
                 }
             }
@@ -851,13 +1043,26 @@ class GradleModificationService(private val project: Project) {
         })
     }
 
-    private fun addClasspathKts(content: String): String {
+    internal fun addClasspathKts(content: String): String {
+        val hasPluginsDsl = PLUGINS_BLOCK_REGEX.containsMatchIn(stripComments(content))
         val depsRegex = Regex("""(buildscript\s*\{[^}]*dependencies\s*\{)""", RegexOption.DOT_MATCHES_ALL)
         return if (depsRegex.containsMatchIn(content)) {
             val withClasspath = depsRegex.replaceFirst(content, "$1\n        classpath(\"$DYNATRACE_CLASSPATH\")")
-            ensureBuildscriptRepositories(withClasspath, isKts = true)
+            // Repositories are managed by pluginManagement in settings.gradle for Plugin DSL projects.
+            if (hasPluginsDsl) withClasspath else ensureBuildscriptRepositories(withClasspath, isKts = true)
         } else {
-            """
+            // Plugin DSL project: only a minimal buildscript {} with dependencies is needed.
+            // Legacy template: include repositories so Gradle can resolve the artifact.
+            val newBlock = if (hasPluginsDsl) {
+                """
+buildscript {
+    dependencies {
+        classpath("$DYNATRACE_CLASSPATH")
+    }
+}
+"""
+            } else {
+                """
 buildscript {
     repositories {
         google()
@@ -867,17 +1072,29 @@ buildscript {
         classpath("$DYNATRACE_CLASSPATH")
     }
 }
-""" + "\n" + content
+"""
+            }
+            newBlock + "\n" + content
         }
     }
 
-    private fun addClasspathGroovy(content: String): String {
+    internal fun addClasspathGroovy(content: String): String {
+        val hasPluginsDsl = PLUGINS_BLOCK_REGEX.containsMatchIn(stripComments(content))
         val depsRegex = Regex("""(buildscript\s*\{[^}]*dependencies\s*\{)""", RegexOption.DOT_MATCHES_ALL)
         return if (depsRegex.containsMatchIn(content)) {
             val withClasspath = depsRegex.replaceFirst(content, "$1\n        classpath '$DYNATRACE_CLASSPATH'")
-            ensureBuildscriptRepositories(withClasspath, isKts = false)
+            if (hasPluginsDsl) withClasspath else ensureBuildscriptRepositories(withClasspath, isKts = false)
         } else {
-            """
+            val newBlock = if (hasPluginsDsl) {
+                """
+buildscript {
+    dependencies {
+        classpath '$DYNATRACE_CLASSPATH'
+    }
+}
+"""
+            } else {
+                """
 buildscript {
     repositories {
         google()
@@ -887,7 +1104,9 @@ buildscript {
         classpath '$DYNATRACE_CLASSPATH'
     }
 }
-""" + "\n" + content
+"""
+            }
+            newBlock + "\n" + content
         }
     }
 
@@ -1027,12 +1246,16 @@ buildscript {
         for (i in openBraceIdx until content.length) {
             when (content[i]) {
                 '{' -> depth++
-                '}' -> { depth--; if (depth == 0) { blockEnd = i; break } }
+                '}' -> {
+                    depth--; if (depth == 0) {
+                        blockEnd = i; break
+                    }
+                }
             }
         }
         if (blockEnd == -1) return content
         val applyStatement = if (isKts) "\napply(plugin = \"$DYNATRACE_PLUGIN_ID\")\n"
-                             else       "\napply plugin: '$DYNATRACE_PLUGIN_ID'\n"
+        else "\napply plugin: '$DYNATRACE_PLUGIN_ID'\n"
         return content.substring(0, blockEnd + 1) + applyStatement + content.substring(blockEnd + 1)
     }
 
@@ -1076,131 +1299,14 @@ buildscript {
     }
 
     // -------------------------------------------------------------------------
-    // dynatrace {} block builders (shared by both paths)
+    // dynatrace {} block builders (shared by both paths) — delegate to companion
     // -------------------------------------------------------------------------
 
-    private fun buildDynatraceBlockKts(config: DynatraceConfig): String {
-        val variantName = if (config.buildVariant == "all" || config.buildVariant.isBlank()) "sampleConfig" else config.buildVariant
-        val variantFilter = if (config.buildVariant == "all" || config.buildVariant.isBlank()) ".*" else config.buildVariant
-        return buildString {
-            appendLine("dynatrace {")
-            // Top-level switches
-            if (!config.strictMode) appendLine("    strictMode(false)")
-            if (!config.pluginEnabled) appendLine("    pluginEnabled(false)")
-            appendLine("    configurations {")
-            appendLine("        create(\"$variantName\") {")
-            appendLine("            variantFilter(\"$variantFilter\")")
-            if (!config.autoInstrument) appendLine("            enabled(false)")
-            // autoStart block — always emitted; add enabled(false) for Direct Boot apps
-            appendLine("            autoStart {")
-            appendLine("                applicationId(\"${config.applicationId}\")")
-            appendLine("                beaconUrl(\"${config.beaconUrl}\")")
-            if (config.userOptIn) appendLine("                userOptIn(true)")
-            if (!config.autoStartEnabled) appendLine("                enabled(false)")
-            appendLine("            }")
-            // userActions block — emit if any sub-property differs from default
-            val needsUserActionsBlock = !config.userActionsEnabled || config.namePrivacy || !config.composeEnabled
-            if (needsUserActionsBlock) {
-                appendLine("            userActions {")
-                if (!config.userActionsEnabled) appendLine("                enabled(false)")
-                if (config.namePrivacy) appendLine("                namePrivacy(true)")
-                if (!config.composeEnabled) appendLine("                composeEnabled(false)")
-                appendLine("            }")
-            }
-            if (!config.webRequestsEnabled) appendLine("            webRequests { enabled(false) }")
-            if (!config.lifecycleEnabled) appendLine("            lifecycle { enabled(false) }")
-            if (!config.crashReporting) appendLine("            crashReporting(false)")
-            if (config.hybridMonitoring) appendLine("            hybridMonitoring(true)")
-            if (config.locationMonitoring) appendLine("            locationMonitoring(true)")
-            // Behavioral events
-            if (config.rageTapDetection) {
-                appendLine("            behavioralEvents {")
-                appendLine("                detectRageTaps(true)")
-                appendLine("            }")
-            }
-            // Agent behavior (advanced)
-            if (config.agentBehaviorLoadBalancing || config.agentBehaviorGrail) {
-                appendLine("            agentBehavior {")
-                if (config.agentBehaviorLoadBalancing) appendLine("                startupLoadBalancing(true)")
-                if (config.agentBehaviorGrail) appendLine("                startupWithGrailEnabled(true)")
-                appendLine("            }")
-            }
-            // Session Replay
-            if (config.sessionReplayEnabled) appendLine("            sessionReplay.enabled(true)")
-            // Exclusions
-            val packages = config.excludePackages.split(",").map { it.trim() }.filter { it.isNotBlank() }
-            val classes  = config.excludeClasses.split(",").map { it.trim() }.filter { it.isNotBlank() }
-            val methods  = config.excludeMethods.split(",").map { it.trim() }.filter { it.isNotBlank() }
-            if (packages.isNotEmpty() || classes.isNotEmpty() || methods.isNotEmpty()) {
-                appendLine("            exclude {")
-                if (packages.isNotEmpty()) appendLine("                packages(${packages.joinToString(", ") { "\"$it\"" }})")
-                if (classes.isNotEmpty())  appendLine("                classes(${classes.joinToString(", ") { "\"$it\"" }})")
-                if (methods.isNotEmpty())  appendLine("                methods(${methods.joinToString(", ") { "\"$it\"" }})")
-                appendLine("            }")
-            }
-            appendLine("        }")
-            appendLine("    }")
-            append("}")
-        }
-    }
+    private fun buildDynatraceBlockKts(config: DynatraceConfig): String =
+        Companion.buildDynatraceBlockKts(config)
 
-    private fun buildDynatraceBlockGroovy(config: DynatraceConfig): String {
-        val variantName = if (config.buildVariant == "all" || config.buildVariant.isBlank()) "sampleConfig" else config.buildVariant
-        val variantFilter = if (config.buildVariant == "all" || config.buildVariant.isBlank()) ".*" else config.buildVariant
-        return buildString {
-            appendLine("dynatrace {")
-            if (!config.strictMode) appendLine("    strictMode false")
-            if (!config.pluginEnabled) appendLine("    pluginEnabled false")
-            appendLine("    configurations {")
-            appendLine("        $variantName {")
-            appendLine("            variantFilter '$variantFilter'")
-            if (!config.autoInstrument) appendLine("            enabled false")
-            appendLine("            autoStart {")
-            appendLine("                applicationId '${config.applicationId}'")
-            appendLine("                beaconUrl '${config.beaconUrl}'")
-            if (config.userOptIn) appendLine("                userOptIn true")
-            if (!config.autoStartEnabled) appendLine("                enabled false")
-            appendLine("            }")
-            val needsUserActionsBlock = !config.userActionsEnabled || config.namePrivacy || !config.composeEnabled
-            if (needsUserActionsBlock) {
-                appendLine("            userActions {")
-                if (!config.userActionsEnabled) appendLine("                enabled false")
-                if (config.namePrivacy) appendLine("                namePrivacy true")
-                if (!config.composeEnabled) appendLine("                composeEnabled false")
-                appendLine("            }")
-            }
-            if (!config.webRequestsEnabled) appendLine("            webRequests { enabled false }")
-            if (!config.lifecycleEnabled) appendLine("            lifecycle { enabled false }")
-            if (!config.crashReporting) appendLine("            crashReporting false")
-            if (config.hybridMonitoring) appendLine("            hybridMonitoring true")
-            if (config.locationMonitoring) appendLine("            locationMonitoring true")
-            if (config.rageTapDetection) {
-                appendLine("            behavioralEvents {")
-                appendLine("                detectRageTaps true")
-                appendLine("            }")
-            }
-            if (config.agentBehaviorLoadBalancing || config.agentBehaviorGrail) {
-                appendLine("            agentBehavior {")
-                if (config.agentBehaviorLoadBalancing) appendLine("                startupLoadBalancing true")
-                if (config.agentBehaviorGrail) appendLine("                startupWithGrailEnabled true")
-                appendLine("            }")
-            }
-            if (config.sessionReplayEnabled) appendLine("            sessionReplay.enabled true")
-            val packages = config.excludePackages.split(",").map { it.trim() }.filter { it.isNotBlank() }
-            val classes  = config.excludeClasses.split(",").map { it.trim() }.filter { it.isNotBlank() }
-            val methods  = config.excludeMethods.split(",").map { it.trim() }.filter { it.isNotBlank() }
-            if (packages.isNotEmpty() || classes.isNotEmpty() || methods.isNotEmpty()) {
-                appendLine("            exclude {")
-                if (packages.isNotEmpty()) appendLine("                packages ${packages.joinToString(", ") { "\"$it\"" }}")
-                if (classes.isNotEmpty())  appendLine("                classes ${classes.joinToString(", ") { "\"$it\"" }}")
-                if (methods.isNotEmpty())  appendLine("                methods ${methods.joinToString(", ") { "\"$it\"" }}")
-                appendLine("            }")
-            }
-            appendLine("        }")
-            appendLine("    }")
-            append("}")
-        }
-    }
+    private fun buildDynatraceBlockGroovy(config: DynatraceConfig): String =
+        Companion.buildDynatraceBlockGroovy(config)
 
     /**
      * Adds a `subprojects {}` block to [projectFile] (the root build file) that injects
@@ -1237,7 +1343,7 @@ buildscript {
 
             val filterAll = allLibraryModuleNames.size <= 1
             val newBlock = if (isKts) buildSdkSubprojectsBlockKts(selectedModuleNames, filterAll)
-                           else       buildSdkSubprojectsBlockGroovy(selectedModuleNames, filterAll)
+            else buildSdkSubprojectsBlockGroovy(selectedModuleNames, filterAll)
 
             val modified = replaceSdkSubprojectsBlock(content, newBlock)
             if (modified != content) projectFile.setBinaryContent(modified.toByteArray(StandardCharsets.UTF_8))
@@ -1258,22 +1364,26 @@ buildscript {
             for (i in (openBrace + 1) until content.length) {
                 when (content[i]) {
                     '{' -> depth++
-                    '}' -> { depth--; if (depth == 0) { blockEnd = i; break } }
+                    '}' -> {
+                        depth--; if (depth == 0) {
+                            blockEnd = i; break
+                        }
+                    }
                 }
             }
             if (blockEnd == -1) continue
             if (!content.substring(match.range.first, blockEnd + 1).contains("agentDependency()")) continue
 
             val before = content.substring(0, match.range.first).trimEnd()
-            val after  = content.substring(blockEnd + 1).trimStart('\n', '\r')
+            val after = content.substring(blockEnd + 1).trimStart('\n', '\r')
             return if (after.isBlank()) "$before\n\n$newBlock"
-                   else "$before\n\n$newBlock\n\n$after"
+            else "$before\n\n$newBlock\n\n$after"
         }
         // No existing block — append
         return content.trimEnd() + "\n\n" + newBlock + "\n"
     }
 
-    private fun buildSdkSubprojectsBlockKts(moduleNames: List<String>, filterAll: Boolean): String =
+    internal fun buildSdkSubprojectsBlockKts(moduleNames: List<String>, filterAll: Boolean): String =
         buildString {
             appendLine("subprojects {")
             appendLine("    pluginManager.withPlugin(\"com.android.library\") {")
@@ -1293,7 +1403,7 @@ buildscript {
             append("}")
         }
 
-    private fun buildSdkSubprojectsBlockGroovy(moduleNames: List<String>, filterAll: Boolean): String =
+    internal fun buildSdkSubprojectsBlockGroovy(moduleNames: List<String>, filterAll: Boolean): String =
         buildString {
             appendLine("subprojects {")
             appendLine("    pluginManager.withPlugin('com.android.library') {")
@@ -1333,8 +1443,8 @@ buildscript {
         // Choose the correct block form for the preview.
         val block = when {
             isMixedApproach && isKts -> buildConfigureExtensionBlockKts(config)
-            isKts                    -> buildDynatraceBlockKts(config)
-            else                     -> buildDynatraceBlockGroovy(config)
+            isKts -> buildDynatraceBlockKts(config)
+            else -> buildDynatraceBlockGroovy(config)
         }
 
         return buildString {
@@ -1353,6 +1463,7 @@ buildscript {
                             appendLine()
                             block.lines().forEach { appendLine("    $it") }
                         }
+
                         usePluginDsl && projectInfo.projectBuildFile != null -> {
                             appendLine("📄 ${projectInfo.projectBuildFile.path}")
                             appendLine("  → Add id(\"$DYNATRACE_PLUGIN_ID\") version \"$DYNATRACE_PLUGIN_VERSION\" to plugins {} block")
@@ -1360,6 +1471,7 @@ buildscript {
                             appendLine()
                             block.lines().forEach { appendLine("    $it") }
                         }
+
                         else -> {
                             projectInfo.projectBuildFile?.let {
                                 appendLine("📄 ${it.path}")
@@ -1383,14 +1495,22 @@ buildscript {
                         appendLine("   Dynamic feature and library modules are instrumented automatically.")
                     }
                 }
+
                 SetupFlow.MULTI_APP -> {
                     // Respect projectInfo.usesPluginDsl — it was overridden by the user's
                     // approach choice on the Modules tab before the preview was requested.
                     if (projectInfo.usesPluginDsl && projectInfo.projectBuildFile != null) {
                         // Plugin DSL: coordinator at root + dynatrace block; app modules untouched
                         val rootContent = try {
-                            stripComments(String(projectInfo.projectBuildFile.contentsToByteArray(), StandardCharsets.UTF_8))
-                        } catch (_: Exception) { "" }
+                            stripComments(
+                                String(
+                                    projectInfo.projectBuildFile.contentsToByteArray(),
+                                    StandardCharsets.UTF_8
+                                )
+                            )
+                        } catch (_: Exception) {
+                            ""
+                        }
                         appendLine("📄 ${projectInfo.projectBuildFile.path}")
                         if (rootContent.contains(DYNATRACE_MAVEN_ARTIFACT)) {
                             appendLine("  🧹 Remove classpath(\"$DYNATRACE_CLASSPATH\") from buildscript dependencies")
@@ -1403,9 +1523,13 @@ buildscript {
                         appendLine("ℹ️  Plugin DSL coordinator at root instruments all app modules")
                         appendLine("   automatically — no changes to individual app module build files.")
                         if (projectInfo.appModules.any { m ->
-                                try { stripComments(String(m.buildFile.contentsToByteArray(), StandardCharsets.UTF_8))
-                                    .contains(DYNATRACE_MODULE_PLUGIN_ID) }
-                                catch (_: Exception) { false } }) {
+                                try {
+                                    stripComments(String(m.buildFile.contentsToByteArray(), StandardCharsets.UTF_8))
+                                        .contains(DYNATRACE_MODULE_PLUGIN_ID)
+                                } catch (_: Exception) {
+                                    false
+                                }
+                            }) {
                             appendLine()
                             appendLine("🧹 Cleanup: com.dynatrace.instrumentation.module will be removed")
                             appendLine("   from app module build files (no longer needed with Plugin DSL).")
@@ -1421,19 +1545,26 @@ buildscript {
                             val moduleConfig = config.moduleCredentials[m.name]?.let {
                                 config.copy(applicationId = it.appId, beaconUrl = it.beaconUrl)
                             } ?: config
-                            val moduleBlock = if (isKts) buildDynatraceBlockKts(moduleConfig) else buildDynatraceBlockGroovy(moduleConfig)
+                            val moduleBlock =
+                                if (isKts) buildDynatraceBlockKts(moduleConfig) else buildDynatraceBlockGroovy(
+                                    moduleConfig
+                                )
                             val moduleContent = try {
                                 stripComments(String(m.buildFile.contentsToByteArray(), StandardCharsets.UTF_8))
-                            } catch (_: Exception) { "" }
+                            } catch (_: Exception) {
+                                ""
+                            }
                             val moduleHasPluginsBlock = PLUGINS_BLOCK_REGEX.containsMatchIn(moduleContent)
                             appendLine("📄 ${m.buildFile.path}")
                             val pluginLine = when {
                                 moduleHasPluginsBlock && isKts ->
                                     "id(\"$DYNATRACE_MODULE_PLUGIN_ID\") inside plugins {} block"
+
                                 moduleHasPluginsBlock ->
                                     "id '$DYNATRACE_MODULE_PLUGIN_ID' inside plugins {} block"
+
                                 isKts -> "apply(plugin = \"$DYNATRACE_MODULE_PLUGIN_ID\")"
-                                else  -> "apply plugin: '$DYNATRACE_MODULE_PLUGIN_ID'"
+                                else -> "apply plugin: '$DYNATRACE_MODULE_PLUGIN_ID'"
                             }
                             appendLine("  → Add: $pluginLine")
                             if (config.moduleCredentials[m.name] != null) {
@@ -1448,9 +1579,12 @@ buildscript {
                         }
                         // Show cleanup section for deselected modules that were previously instrumented
                         val modulesToClean = deselectedModules.filter { m ->
-                            try { stripComments(String(m.buildFile.contentsToByteArray(), StandardCharsets.UTF_8))
-                                .let { it.contains(DYNATRACE_MODULE_PLUGIN_ID) || it.contains("dynatrace {") } }
-                            catch (_: Exception) { false }
+                            try {
+                                stripComments(String(m.buildFile.contentsToByteArray(), StandardCharsets.UTF_8))
+                                    .let { it.contains(DYNATRACE_MODULE_PLUGIN_ID) || it.contains("dynatrace {") }
+                            } catch (_: Exception) {
+                                false
+                            }
                         }
                         if (modulesToClean.isNotEmpty()) {
                             appendLine("🧹 Cleanup — Dynatrace will be removed from deselected modules:")
@@ -1463,6 +1597,7 @@ buildscript {
                         }
                     }
                 }
+
                 else -> {
                     // SINGLE_APP / SINGLE_BUILD_FILE / UNKNOWN
                     when {
@@ -1474,6 +1609,7 @@ buildscript {
                             appendLine()
                             block.lines().forEach { appendLine("    $it") }
                         }
+
                         usePluginDsl && projectInfo.projectBuildFile != null -> {
                             appendLine("📄 ${projectInfo.projectBuildFile.path}")
                             appendLine("  → Add id(\"$DYNATRACE_PLUGIN_ID\") version \"$DYNATRACE_PLUGIN_VERSION\" to plugins {} block")
@@ -1481,6 +1617,7 @@ buildscript {
                             appendLine()
                             block.lines().forEach { appendLine("    $it") }
                         }
+
                         else -> {
                             projectInfo.projectBuildFile?.let {
                                 appendLine("📄 ${it.path}")
@@ -1518,7 +1655,8 @@ buildscript {
             appendLine("=== Changes to be applied ===\n")
             when {
                 isMixedApproach && projectBuildFile != null -> {
-                    val block = if (isKotlinDsl) buildConfigureExtensionBlockKts(config) else buildDynatraceBlockGroovy(config)
+                    val block =
+                        if (isKotlinDsl) buildConfigureExtensionBlockKts(config) else buildDynatraceBlockGroovy(config)
                     appendLine("📄 ${projectBuildFile.path}")
                     appendLine("  → Add classpath(\"$DYNATRACE_CLASSPATH\") to buildscript dependencies")
                     appendLine("  → Add apply(plugin = \"$DYNATRACE_PLUGIN_ID\") after plugins {} block")
@@ -1526,6 +1664,7 @@ buildscript {
                     appendLine()
                     block.lines().forEach { appendLine("    $it") }
                 }
+
                 usePluginDsl && projectBuildFile != null -> {
                     val block = if (isKotlinDsl) buildDynatraceBlockKts(config) else buildDynatraceBlockGroovy(config)
                     appendLine("📄 ${projectBuildFile.path}")
@@ -1534,6 +1673,7 @@ buildscript {
                     appendLine()
                     block.lines().forEach { appendLine("    $it") }
                 }
+
                 else -> {
                     val block = if (isKotlinDsl) buildDynatraceBlockKts(config) else buildDynatraceBlockGroovy(config)
                     projectBuildFile?.let {

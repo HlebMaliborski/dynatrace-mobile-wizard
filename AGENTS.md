@@ -1,6 +1,6 @@
 # AGENTS.md — Dynatrace Wizard
 
-An **IntelliJ Platform plugin** (Kotlin) that adds a 4-step wizard dialog to Android Studio / IntelliJ for configuring the Dynatrace Mobile SDK. It modifies the user's Gradle build files directly.
+An **IntelliJ Platform plugin** (Kotlin) that adds a multi-step wizard dialog to Android Studio / IntelliJ for configuring the Dynatrace Mobile SDK. It modifies the user's Gradle build files directly and can optionally export a Markdown `skills.md` file for AI agents.
 
 ---
 
@@ -10,14 +10,18 @@ An **IntelliJ Platform plugin** (Kotlin) that adds a 4-step wizard dialog to And
 DynatraceWizardAction (AnAction, Tools menu / context menu)
   └── DynatraceWizardDialog (DialogWrapper, JBTabbedPane)
         ├── WelcomeStep        → uses ProjectDetectionService → ProjectInfo
+        ├── ModuleSelectionStep → chooses app modules / multi-app approach
         ├── EnvironmentConfigStep → collects appId + beaconUrl
         ├── FeatureToggleStep  → collects feature flags
+        ├── SkillsStep         → collects AI skill export settings → SkillsExportConfig
         └── SummaryStep        → calls GradleModificationService.generateChangePreview()
-              [on Finish] GradleModificationService.addDynatraceToProjectBuild()
-                          GradleModificationService.addDynatraceToAppBuild()
+              [on Finish] GradleModificationService.configureGradleFiles()
+                          SkillsExportService.writeSkillsFile()
 ```
 
-**Central model:** `DynatraceConfig` (`model/DynatraceConfig.kt`) — a plain `data class` carrying all user inputs. Built in `DynatraceWizardDialog.buildConfig()` and passed to services.
+**Central Gradle model:** `DynatraceConfig` (`model/DynatraceConfig.kt`) — a plain `data class` carrying Dynatrace Gradle configuration only.
+
+**Separate Skills model:** `SkillsExportConfig` (`model/SkillsExportConfig.kt`) — carries only the dedicated Skills tab state and is built separately in `DynatraceWizardDialog.buildSkillsConfig()`.
 
 **`isKotlinDsl` flag** is detected once in `ProjectDetectionService.detectProject()` and threaded through every service call to branch between Groovy DSL and Kotlin DSL codegen.
 
@@ -29,7 +33,13 @@ DynatraceWizardAction (AnAction, Tools menu / context menu)
 |------|---------|
 | `src/main/resources/META-INF/plugin.xml` | Registers the action in ToolsMenu, EditorPopupMenu, ProjectViewPopupMenu, and the notification group |
 | `gradle.properties` | All platform metadata: `platformType=IC`, `platformVersion=2024.1.7`, `pluginVersion`, `pluginSinceBuild` |
-| `service/GradleModificationService.kt` | String-manipulation-based Gradle file codegen; hardcodes plugin version `8.281.1.1006` |
+| `service/GradleModificationService.kt` | String-manipulation-based Gradle file codegen; uses plugin version constraint `8.+` |
+| `service/SkillsExportService.kt` | Generates project-specific Markdown `skills.md` snapshots; writes them into the user's Android project |
+| `docs/skills/skills.md` | **Skill index** — routes AI agents to the correct topic-specific file; install all five files together |
+| `docs/skills/setup.md` | Plugin setup & configuration — Steps 1-4, full `dynatrace {}` DSL reference, multi-module patterns, manual startup, standalone instrumentation |
+| `docs/skills/sdk-apis.md` | OneAgent SDK APIs — user actions, value reporting, business events, `WebRequestTiming`, hybrid monitoring, `setBeaconHeaders`, session/privacy management |
+| `docs/skills/monitoring.md` | Monitoring features — app performance, web requests, W3C Trace Context, OkHttp modifier, crash/ANR/native crash, custom events, user/session management |
+| `docs/skills/troubleshooting.md` | Troubleshooting & limitations — general checklist, runtime Q&A, build error reference, instrumentation and build-specific limitations |
 | `service/ProjectDetectionService.kt` | Scans `baseDir` children for `build.gradle[.kts]`; checks for `com.android.application` to confirm Android project |
 | `util/ValidationUtil.kt` | `ValidationResult` sealed class; Application ID regex `[A-Za-z0-9_\-]+`; Beacon URL must be HTTPS |
 
@@ -60,6 +70,7 @@ Plugin signing requires env vars `CERTIFICATE_CHAIN`, `PRIVATE_KEY`, `PRIVATE_KE
 ## Adding Features
 
 - **New wizard step**: create a `*Step.kt` in `wizard/`, add a `createPanel(): JComponent` method, register the tab in `DynatraceWizardDialog.createCenterPanel()`.
-- **New config option**: add a field to `DynatraceConfig`, expose it from the relevant step, update `buildConfig()` in `DynatraceWizardDialog`, and add codegen in both `buildDynatraceBlockKts()` and `buildDynatraceBlockGroovy()` in `GradleModificationService`.
+- **New Gradle config option**: add a field to `DynatraceConfig`, expose it from the relevant step, update `buildConfig()` in `DynatraceWizardDialog`, and add codegen in both `buildDynatraceBlockKts()` and `buildDynatraceBlockGroovy()` in `GradleModificationService`.
+- **New Skills option**: add a field to `SkillsExportConfig`, expose it from `SkillsStep`, update `buildSkillsConfig()` in `DynatraceWizardDialog`, and thread it into `SkillsExportService`.
 - **Tests** live under `src/test/` and use JUnit 4 (already in `dependencies`). Services are testable without a running IDE — pass a mock/null `Project` where needed.
 
