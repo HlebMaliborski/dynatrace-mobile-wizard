@@ -232,4 +232,84 @@ class GradleModificationServiceTest {
 
         assertTrue("filterAll block must be detected as already configured by fallback check", detectedByFallback)
     }
+
+    // ── Classpath injection — Plugin DSL vs legacy template ────────────────
+
+    /**
+     * Regression test:
+     * When the root build file already uses Plugin DSL (`plugins {}` block), adding the
+     * Dynatrace classpath should produce a **minimal** `buildscript { dependencies { ... } }`
+     * block WITHOUT a `repositories {}` section (those live in pluginManagement in settings.gradle).
+     */
+    @Test
+    fun `addClasspathGroovy emits minimal buildscript when plugins block is present`() {
+        val service = GradleModificationService(null)
+        val input = """
+            plugins {
+                id 'com.android.application' version '8.1.0' apply false
+            }
+        """.trimIndent()
+
+        val result = service.addClasspathGroovy(input)
+
+        assertTrue("classpath entry must be present", result.contains("classpath 'com.dynatrace.tools.android:gradle-plugin"))
+        assertFalse("repositories block must NOT be emitted for Plugin DSL projects", result.contains("repositories {"))
+        assertTrue("buildscript block must be present", result.contains("buildscript {"))
+        assertTrue("original plugins block must be preserved", result.contains("id 'com.android.application'"))
+    }
+
+    @Test
+    fun `addClasspathKts emits minimal buildscript when plugins block is present`() {
+        val service = GradleModificationService(null)
+        val input = """
+            plugins {
+                id("com.android.application") version "8.1.0" apply false
+            }
+        """.trimIndent()
+
+        val result = service.addClasspathKts(input)
+
+        assertTrue("classpath entry must be present", result.contains("classpath(\"com.dynatrace.tools.android:gradle-plugin"))
+        assertFalse("repositories block must NOT be emitted for Plugin DSL projects", result.contains("repositories {"))
+        assertTrue("buildscript block must be present", result.contains("buildscript {"))
+    }
+
+    @Test
+    fun `addClasspathGroovy emits full buildscript with repositories for legacy template`() {
+        val service = GradleModificationService(null)
+        // Legacy project: no plugins {} block, just a buildscript section stub
+        val input = """
+            // legacy root build.gradle
+            allprojects {
+                repositories { google(); mavenCentral() }
+            }
+        """.trimIndent()
+
+        val result = service.addClasspathGroovy(input)
+
+        assertTrue("classpath entry must be present", result.contains("classpath 'com.dynatrace.tools.android:gradle-plugin"))
+        assertTrue("repositories block must be present for legacy projects", result.contains("repositories {"))
+        assertTrue("mavenCentral must be listed", result.contains("mavenCentral()"))
+    }
+
+    @Test
+    fun `addClasspathGroovy inserts into existing buildscript dependencies without adding repositories for Plugin DSL`() {
+        val service = GradleModificationService(null)
+        // Plugin DSL project that already has a minimal buildscript {} (e.g. for another classpath)
+        val input = """
+            plugins {
+                id 'com.android.application' version '8.1.0' apply false
+            }
+            buildscript {
+                dependencies {
+                    classpath 'com.android.tools.build:gradle:8.1.0'
+                }
+            }
+        """.trimIndent()
+
+        val result = service.addClasspathGroovy(input)
+
+        assertTrue("Dynatrace classpath must be inserted", result.contains("classpath 'com.dynatrace.tools.android:gradle-plugin"))
+        assertFalse("no repositories block should be injected for Plugin DSL", result.contains("mavenCentral()"))
+    }
 }
