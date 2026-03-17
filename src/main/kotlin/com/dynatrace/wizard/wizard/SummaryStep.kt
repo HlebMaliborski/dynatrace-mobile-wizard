@@ -211,11 +211,15 @@ class SummaryStep {
 
         val skillManifestSection = if (!skillsPreview.isNullOrBlank()) buildString {
             appendLine()
-            appendLine("=== AI Skill Preview ===")
+            appendLine("=== AI Skill Preview (first 35 lines) ===")
             appendLine()
-            appendLine("The selected skills.md file will be written with the following content:")
-            appendLine()
-            appendLine(skillsPreview)
+            val lines = skillsPreview.lines()
+            val preview = lines.take(35).joinToString("\n")
+            appendLine(preview)
+            if (lines.size > 35) {
+                appendLine()
+                appendLine("... [${lines.size - 35} more lines — full content will be written to ${skillsConfig.skillFilePath}]")
+            }
             appendLine()
         } else ""
 

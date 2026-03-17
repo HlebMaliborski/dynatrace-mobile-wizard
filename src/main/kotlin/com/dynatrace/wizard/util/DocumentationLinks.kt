@@ -24,37 +24,37 @@ object DocumentationLinks {
     const val CONFIGURE_PLUGIN        = "$BASE/configure-plugin-for-instrumentation"
     const val AUTO_INSTRUMENTATION    = "$BASE/configure-plugin-for-instrumentation"
     const val MONITORING_CAPABILITIES = "$BASE/monitoring-capabilities"
-    const val CRASH_REPORTING         = "$BASE/monitoring-capabilities"
+    const val CRASH_REPORTING         = "https://docs.dynatrace.com/docs/observe/digital-experience/new-rum-experience/mobile-frontends/android/id-07-error-and-crash-reporting"
     const val ADJUST_ONEAGENT         = "$BASE/adjust-oneagent-configuration"
     const val USER_OPT_IN             = "$BASE/adjust-oneagent-configuration"
     const val HYBRID_MONITORING       = "$BASE/adjust-oneagent-configuration"
     const val MULTI_MODULE            = "$BASE/configure-multi-module-projects"
 
     // Privacy & data collection
-    const val PRIVACY_DATA_COLLECTION = "$MOBILE_BASE/configure-privacy-and-data-collection"
+    const val PRIVACY_DATA_COLLECTION = "https://docs.dynatrace.com/docs/observe/digital-experience/new-rum-experience/mobile-frontends/android/id-04-privacy-and-data-collection"
 
     // App performance
     const val APP_PERFORMANCE         = "$MOBILE_BASE/app-performance-for-android"
 
     // Web request monitoring
-    const val WEB_REQUEST_MONITORING  = "$MOBILE_BASE/web-request-performance-monitoring"
+    const val WEB_REQUEST_MONITORING  = "https://docs.dynatrace.com/docs/observe/digital-experience/new-rum-experience/mobile-frontends/android/id-06-web-request-performance"
 
     // Error & crash reporting
-    const val ERROR_CRASH_REPORTING   = "$MOBILE_BASE/error-and-crash-reporting"
+    const val ERROR_CRASH_REPORTING   = "https://docs.dynatrace.com/docs/observe/digital-experience/new-rum-experience/mobile-frontends/android/id-07-error-and-crash-reporting"
 
     // Custom events
-    const val CUSTOM_EVENTS           = "$MOBILE_BASE/custom-events"
+    const val CUSTOM_EVENTS           = "https://docs.dynatrace.com/docs/observe/digital-experience/new-rum-experience/mobile-frontends/android/id-08-custom-events"
 
     // User & session management
-    const val USER_SESSION_MANAGEMENT = "$MOBILE_BASE/user-and-session-management"
+    const val USER_SESSION_MANAGEMENT = "https://docs.dynatrace.com/docs/observe/digital-experience/new-rum-experience/mobile-frontends/android/id-09-user-and-session"
 
     // OneAgent SDK manual instrumentation
     const val MANUAL_SDK_INSTRUMENTATION =
-        "https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications/instrument-android-app/instrumentation-via-oneagent-sdk"
+        "https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications/instrument-android-app/instrumentation-via-oneagent-sdk/manual-instrumentation"
 
     // Adjust communication with OneAgent SDK (network security, headers, auth)
     const val ADJUST_COMMUNICATION =
-        "https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications/instrument-android-app/adjust-communication-oneagent-sdk-android"
+        "https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications/instrument-android-app/instrumentation-via-oneagent-sdk/adjust-oneagent-communication"
 
     // Standalone manual instrumentation (without Gradle plugin)
     const val STANDALONE_INSTRUMENTATION =
@@ -64,7 +64,7 @@ object DocumentationLinks {
     // Debug logging
     const val DEBUG_LOGGING           = "$BASE/enable-debug-logging"
 
-    const val SUPPORT_LIMITATIONS     = "$MOBILE_BASE/support-and-limitations"
+    const val SUPPORT_LIMITATIONS     = "https://docs.dynatrace.com/docs/observe/digital-experience/new-rum-experience/mobile-frontends/android/id-02-support-and-limitations"
 
     // Build-specific limitations (anchor on support page)
     const val BUILD_SPECIFIC_LIMITATIONS =

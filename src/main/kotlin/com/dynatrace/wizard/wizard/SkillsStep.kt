@@ -158,11 +158,17 @@ class SkillsStep {
     }
 
     private fun updateInstallLocationsLabel() {
-        val locations = SkillsExportService().buildInstallLocations()
-        val rows = locations.joinToString("<br>") {
-            "<b>${it.client.label}</b>: ${it.userLevelPath} &nbsp;|&nbsp; ${it.projectLevelPath}"
+        val selectedClient = getSkillClient()
+        val location = SkillsExportService().buildInstallLocations()
+            .find { it.client == selectedClient }
+        skillInstallLocationsLabel.text = if (location != null) {
+            "<html>" +
+            "User-level (all projects): <code>${location.userLevelPath}</code><br>" +
+            "Project-level (repo only): <code>${location.projectLevelPath}</code>" +
+            "</html>"
+        } else {
+            "<html>Select a client and scope to see the install path.</html>"
         }
-        skillInstallLocationsLabel.text = "<html>User-level = available to all projects; project-level = repository-only.<br><br>$rows</html>"
     }
 
     private fun syncAvailability() {

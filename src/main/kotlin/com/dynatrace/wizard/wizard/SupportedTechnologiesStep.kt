@@ -350,6 +350,11 @@ class SupportedTechnologiesStep {
         val builder   = FormBuilder.createFormBuilder()
         val conflicts = detectConflictingPlugins(content)
         val anrWarn   = hasAnrWarning(content)
+        val hasVersionIssue = CATALOG.any { item ->
+            val r = detectItem(item, content)
+            r.detectedVersion != null && !r.inRange && item.type == SupportType.AUTO
+        }
+        val allClear = !hasVersionIssue && conflicts.isEmpty() && !anrWarn
 
         builder.addComponent(
             JBLabel("Supported Technologies").apply {
@@ -372,6 +377,16 @@ class SupportedTechnologiesStep {
 
         builder.addComponent(TitledSeparator("Version Requirements"))
         builder.addComponent(techGrid(CATALOG, content))
+
+        if (allClear) {
+            builder.addVerticalGap(6)
+            builder.addComponent(noticePanel(
+                "✅  All detected technologies are within the supported range " +
+                "and no conflicting instrumentation plugins were found. " +
+                "This project is ready for Dynatrace SDK setup.",
+                WizardColors.success
+            ))
+        }
 
         if (anrWarn) {
             builder.addVerticalGap(6)
@@ -398,17 +413,17 @@ class SupportedTechnologiesStep {
             builder.addComponent(DocumentationLinks.createLinkLabel(
                 "Build-specific limitations →", DocumentationLinks.BUILD_SPECIFIC_LIMITATIONS))
             builder.addComponent(DocumentationLinks.createLinkLabel(
-                "Compatibility with other monitoring tools →", DocumentationLinks.COMPATIBILITY_MONITORING_TOOLS))
+                "Compatibility with other monitoring tools", DocumentationLinks.COMPATIBILITY_MONITORING_TOOLS))
         }
 
         builder.addVerticalGap(8)
         builder.addComponent(TitledSeparator("Documentation"))
         builder.addComponent(DocumentationLinks.createLinkLabel(
-            "Supported versions & limitations →", DocumentationLinks.SUPPORT_LIMITATIONS))
+            "Supported versions & limitations", DocumentationLinks.SUPPORT_LIMITATIONS))
         builder.addComponent(DocumentationLinks.createLinkLabel(
-            "Build-specific limitations →", DocumentationLinks.BUILD_SPECIFIC_LIMITATIONS))
+            "Build-specific limitations", DocumentationLinks.BUILD_SPECIFIC_LIMITATIONS))
         builder.addComponent(DocumentationLinks.createLinkLabel(
-            "Compatibility with other monitoring tools →", DocumentationLinks.COMPATIBILITY_MONITORING_TOOLS))
+            "Compatibility with other monitoring tools", DocumentationLinks.COMPATIBILITY_MONITORING_TOOLS))
         builder.addVerticalGap(8)
 
         return builder.panel.also { it.border = JBUI.Borders.empty(12, 16, 12, 16) }
