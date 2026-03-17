@@ -6,6 +6,8 @@ import com.dynatrace.wizard.model.SkillInstallScope
 import com.dynatrace.wizard.model.SkillsExportConfig
 import com.dynatrace.wizard.service.ProjectDetectionService.SetupFlow
 import com.dynatrace.wizard.wizard.SkillsStep
+import com.intellij.openapi.vfs.VirtualFile
+import org.mockito.Mockito.mock
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -55,6 +57,25 @@ class SkillsExportServiceTest {
         assertTrue(markdown.contains("Crash reporting: Enabled"))
         assertTrue(markdown.contains("Session Replay: Enabled"))
         assertTrue(markdown.contains("User opt-in: Enabled"))
+        // No self-referencing parent field
+        assertFalse(markdown.contains("parent: dynatrace-android-sdk"))
+        // DynatraceConfigurationBuilder reference table
+        assertTrue(markdown.contains("DynatraceConfigurationBuilder Reference"))
+        assertTrue(markdown.contains(".withUserOptIn(true)"))
+        // endVisit API
+        assertTrue(markdown.contains("Dynatrace.endVisit()"))
+        // Standalone instrumentation
+        assertTrue(markdown.contains("Standalone Manual Instrumentation"))
+        assertTrue(markdown.contains("com.dynatrace.agent:agent-android"))
+        // New Common Issues rows
+        assertTrue(markdown.contains("Custom action never appears"))
+        assertTrue(markdown.contains("Manual startup config ignored"))
+        assertTrue(markdown.contains("WebSocket timing not reported"))
+        // What to do with the output table
+        assertTrue(markdown.contains("What to do with the output"))
+        assertTrue(markdown.contains("Use Plugin DSL approach"))
+        // New RUM Experience
+        assertTrue(markdown.contains("Enable the New RUM Experience"))
     }
 
     @Test
@@ -117,6 +138,35 @@ class SkillsExportServiceTest {
             generatedAt = Instant.parse("2026-01-01T00:00:00Z")
         )
         assertFalse(markdown.contains("Debug agent logging"))
+    }
+
+    @Test
+    fun `generateSkillsMarkdown includes Groovy SDK opt-in variant when sdkLibraryModules provided`() {
+        val service = SkillsExportService()
+        val mockFile = mock(VirtualFile::class.java)
+        val libModule = ProjectDetectionService.ModuleInfo(
+            name = "lib-analytics",
+            type = ProjectDetectionService.ModuleType.LIBRARY,
+            buildFile = mockFile,
+            hasDynatrace = false
+        )
+        val infoWithLib = projectInfo.copy(
+            allModules = listOf(libModule)
+        )
+        val markdown = service.generateSkillsMarkdown(
+            infoWithLib,
+            DynatraceConfig(),
+            SkillsExportConfig(exportSkillFile = true),
+            sdkLibraryModules = listOf(libModule),
+            generatedAt = Instant.parse("2026-01-01T00:00:00Z")
+        )
+        // Both Kotlin DSL and Groovy DSL variants should be present
+        assertTrue(markdown.contains("Kotlin DSL"))
+        assertTrue(markdown.contains("Groovy"))
+        assertTrue(markdown.contains("build.gradle.kts"))
+        assertTrue(markdown.contains("build.gradle"))
+        assertTrue(markdown.contains("pluginManager.withPlugin(\"com.android.library\")"))
+        assertTrue(markdown.contains("pluginManager.withPlugin('com.android.library')"))
     }
 }
 

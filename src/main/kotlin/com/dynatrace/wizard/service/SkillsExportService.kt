@@ -150,6 +150,23 @@ subprojects { project ->
         }
     }
 }"""
+            val filterBlockGroovy = if (filterAll) """
+subprojects {
+    pluginManager.withPlugin('com.android.library') {
+        dependencies {
+            implementation com.dynatrace.tools.android.DynatracePlugin.agentDependency()
+        }
+    }
+}""" else """
+subprojects { project ->
+    pluginManager.withPlugin('com.android.library') {
+        if (${nameList.joinToString(" || ") { """project.name == "${it}"""" }}) {
+            dependencies {
+                implementation com.dynatrace.tools.android.DynatracePlugin.agentDependency()
+            }
+        }
+    }
+}"""
             """
 
 ## OneAgent SDK — Library Modules
@@ -157,9 +174,14 @@ subprojects { project ->
 The following library modules are opted into `agentDependency()` so their code can call Dynatrace APIs directly.
 Selected: ${nameList.joinToString()}
 
-Add this block to the **root** `build.gradle.kts`:
+**Kotlin DSL** — add to the **root** `build.gradle.kts`:
 
 ```kotlin$filterBlock
+```
+
+**Groovy** — add to the **root** `build.gradle`:
+
+```groovy$filterBlockGroovy
 ```
 """
         } else ""
@@ -231,7 +253,6 @@ description: >
   Use when asked to add, update, or troubleshoot Dynatrace in this project.
 license: Apache-2.0
 category: sdk-setup
-parent: $SKILL_SLUG
 disable-model-invocation: true
 generated-at: $generatedAt
 generated-by: $GENERATOR
@@ -312,6 +333,20 @@ grep -rn 'WebView\|loadUrl' app/src/main 2>/dev/null | head -5
 find app/src/main -name "*.kt" 2>/dev/null | head -3
 find app/src/main -name "*.java" 2>/dev/null | head -3
 ```
+
+**What to do with the output:**
+
+| Finding | Action |
+| --- | --- |
+| `build.gradle.kts` exists | Use Kotlin DSL snippets throughout |
+| `plugins {` in root file | Use Plugin DSL approach (Step 2a) |
+| `buildscript {` in root file | Use Buildscript Classpath approach (Step 2b) |
+| `com.dynatrace.instrumentation` already present | Read existing config before overwriting |
+| `mavenCentral()` missing | Add it to `pluginManagement.repositories` first |
+| Multiple `build.gradle` files | Multi-module project — see Multi-Module Patterns |
+| `WebView` usage found | Enable `hybridMonitoring(true)` |
+| OkHttp / Retrofit found | Web request monitoring will work automatically |
+| Compose dependencies found | Compose instrumentation is enabled by default (plugin 8.271+) |
 
 **Known values detected by Dynatrace Wizard for this project:**
 
@@ -656,6 +691,27 @@ Dynatrace.startup(this, new DynatraceConfigurationBuilder(
 
 ---
 
+## DynatraceConfigurationBuilder Reference
+
+Key builder methods — chained before `.buildConfiguration()`:
+
+| Method | Default | Description |
+| --- | --- | --- |
+| `.withUserOptIn(true)` | `false` | Enable user consent / opt-in mode |
+| `.withCrashReporting(false)` | `true` | Disable crash reporting |
+| `.withAnrReporting(false)` | `true` | Disable ANR reporting (Android 11+) |
+| `.withNativeCrashReporting(false)` | `true` | Disable NDK crash reporting (Android 11+) |
+| `.withActivityMonitoring(false)` | `true` | Disable Activity lifecycle monitoring |
+| `.withHybridMonitoring(true)` | `false` | Enable WebView hybrid monitoring |
+| `.withStartupLoadBalancing(true)` | `false` | Client-side ActiveGate load balancing |
+| `.withMonitoredDomains(".<domain>")` | — | Domains for hybrid cookie injection |
+| `.withMonitoredHttpsDomains("https://.<domain>")` | — | Same but adds Secure cookie flag (v8.237+) |
+| `.fileDomainCookies(false)` | `true` | Disable cookies for `file://` domains (v8.271+) |
+| `.withCommunicationProblemListener(listener)` | — | Token-refresh callback |
+| `.withDebugLogging(true)` | `false` | Enable verbose Logcat output (NOT for production) |
+
+---
+
 ## OneAgent SDK — Custom User Actions
 
 ```kotlin
@@ -776,6 +832,64 @@ Dynatrace.setBeaconHeaders(null)
 2. Remove the plugin from `plugins { }` or `buildscript { dependencies { classpath … } }`
 3. Remove any `apply plugin: 'com.dynatrace.instrumentation'` lines
 4. Sync Gradle
+
+---
+
+## Standalone Manual Instrumentation (No Gradle Plugin)
+
+Use when you cannot use the Dynatrace Android Gradle plugin.
+
+### Step 1 — Add the OneAgent dependency
+
+```kotlin
+// Kotlin DSL
+dependencies {
+    implementation("com.dynatrace.agent:agent-android:8.+")
+}
+```
+
+```groovy
+// Groovy
+dependencies {
+    implementation 'com.dynatrace.agent:agent-android:8.+'
+}
+```
+
+For multi-module projects, add it as `api` in the base app module so feature modules can access the SDK.
+
+### Step 2 — Start OneAgent manually
+
+```kotlin
+// Kotlin
+class YourApplication : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        Dynatrace.startup(this, DynatraceConfigurationBuilder(
+            "${dynatraceConfig.applicationId.ifBlank { "<YourApplicationID>" }}",
+            "${dynatraceConfig.beaconUrl.ifBlank { "<ProvidedBeaconUrl>" }}"
+        ).buildConfiguration())
+    }
+}
+```
+
+```java
+// Java
+public class YourApplication extends Application {
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        Dynatrace.startup(this, new DynatraceConfigurationBuilder(
+            "${dynatraceConfig.applicationId.ifBlank { "<YourApplicationID>" }}",
+            "${dynatraceConfig.beaconUrl.ifBlank { "<ProvidedBeaconUrl>" }}"
+        ).buildConfiguration());
+    }
+}
+```
+
+> When the Dynatrace Gradle plugin is **also** applied, disable the auto-injected startup call first — otherwise the plugin's injected call runs before yours and your configuration is ignored:
+> ```kotlin
+> dynatrace { configurations { create("s") { autoStart { enabled(false) } } } }
+> ```
 
 ---
 
@@ -969,6 +1083,37 @@ Dynatrace.sendSessionPropertyEvent(
 
 ---
 
+## Force-End a Session
+
+```kotlin
+// Kotlin — ends current session, closes all open actions, starts a new session
+Dynatrace.endVisit()
+```
+
+```java
+// Java
+Dynatrace.endVisit();
+```
+
+> After `endVisit`, sessions are **not** re-tagged automatically. Call `identifyUser()` again in the new session.
+
+OneAgent also ends sessions automatically on: idle timeout, duration timeout, privacy changes, or app force-stop.
+
+---
+
+## Enable the New RUM Experience
+
+To enable in the Dynatrace UI:
+
+1. Go to **Experience Vitals** → select your mobile frontend → **Settings**
+2. Under **Enablement and cost control**, turn on **New Real User Monitoring Experience**
+
+Or enable at the environment level: **Settings** → **Collect and capture** → **Real User Monitoring** → **Mobile frontends** → **Traffic and cost control**.
+
+To activate via agent on first app start, set `startupWithGrailEnabled(true)` in the `agentBehavior {}` block of your `dynatrace {}` configuration (can be overridden by cluster config).
+
+---
+
 ## Common Issues
 
 | Symptom | Likely cause | Fix |
@@ -985,6 +1130,14 @@ Dynatrace.sendSessionPropertyEvent(
 | Event/session properties dropped | Property not configured in Dynatrace UI, or missing prefix | Define properties in UI first; use `event_properties.` / `session_properties.` prefix |
 | `OkHttpEventModifier` body exception | Using `body()` instead of `peekBody()` consumes the stream | Always use `response.peekBody(n)` inside the modifier |
 | App start duration shorter than expected | Agent started too late in manual startup | Call `Dynatrace.startup()` as early as possible in `Application.onCreate()` |
+| Custom action never appears in Dynatrace | `leaveAction()` not called, or action open > 9 minutes | Always call `leaveAction()` or `cancel()`; actions open longer than 9 minutes are discarded |
+| Manual startup config ignored | Auto-instrumentation injects its own `startup` call first | Add `autoStart { enabled(false) }` in the DSL to prevent the injected call |
+| WebSocket timing not reported | Connection open longer than ~9 minutes | Only WebSocket connections ≤ 9 minutes are reliably reported |
+| WebView hybrid session not merging with native session | `instrumentWebView` called after `loadUrl` | Always call `Dynatrace.instrumentWebView(webView)` **before** `webView.loadUrl(...)` |
+| Hybrid cookies lost after `removeAllCookies` | Dynatrace cookies deleted along with app cookies | Call `Dynatrace.restoreCookies()` immediately after clearing cookies |
+| OneAgent stops sending data after 403 | Server rejects stale auth token, no `CommunicationProblemListener` | Add a `CommunicationProblemListener` and call `setBeaconHeaders` with refreshed token |
+| Business events not appearing | OneAgent disabled (cost control, privacy off) | Business events require an active monitored session |
+| `enterAction` returns an action but no data appears | `reportValue`/`reportError` called on a finished action | Check `action.isFinished()` before reporting; don't interact with finished actions |
 
 ---
 
@@ -1055,7 +1208,7 @@ For hybrid apps: `Dynatrace.instrumentWebView(webView)` is called **before** `we
 ### Why are some web requests missing?
 
 - **Unsupported HTTP library** — only `HttpURLConnection` and `OkHttp` (v3/4/5) are auto-instrumented; use manual `HttpRequestEventData` or `WebRequestTiming` for others
-- **Firebase plugin conflict** — the Firebase Gradle plugin can interfere with OkHttp instrumentation
+- **Firebase plugin conflict** — the Firebase Gradle plugin can interfere with OkHttp instrumentation; verify by temporarily removing Firebase
 - **Request made outside an active session** — requests are only captured when OneAgent is running
 
 ---
@@ -1138,26 +1291,6 @@ The wizard uses `8.+` as the version constraint, allowing automatic minor and pa
         return outputPath
     }
 
-    private fun buildSkillId(projectInfo: ProjectDetectionService.ProjectInfo): String {
-        val base = projectInfo.appModuleName.ifBlank { "app" }
-            .lowercase()
-            .replace(Regex("[^a-z0-9._-]"), "-")
-            .trim('-')
-            .ifBlank { "app" }
-        return "com.dynatrace.skill.$base.instrumentation"
-    }
-
-    private fun buildCapabilities(config: DynatraceConfig): List<SkillCapability> {
-        val capabilities = mutableListOf(
-            SkillCapability.CONFIGURE_DYNATRACE_GRADLE,
-            SkillCapability.UPDATE_DYNATRACE_SETTINGS,
-            SkillCapability.EXPORT_SUMMARY_PREVIEW
-        )
-        if (config.crashReporting) capabilities += SkillCapability.ENABLE_CRASH_REPORTING
-        if (config.sessionReplayEnabled) capabilities += SkillCapability.ENABLE_SESSION_REPLAY
-        if (config.userOptIn || config.namePrivacy) capabilities += SkillCapability.ENFORCE_PRIVACY_MODE
-        return capabilities
-    }
 
     private fun buildPathFor(client: SkillClient, scope: SkillInstallScope): String {
         val base = when (scope) {

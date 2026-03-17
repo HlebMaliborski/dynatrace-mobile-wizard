@@ -89,12 +89,12 @@ class SupportedTechnologiesStep {
         ),
         TechItem(
             name = "Kotlin",
-            // ~2 versions back (1.8, 1.9) and ~2 forward (2.1, 2.2) from baseline 2.0.21
-            versionLabel = "1.8 – 2.2",
+            // Keep the range generous — Dynatrace typically trails Kotlin by 1-2 minor versions
+            versionLabel = "1.8 – 2.5",
             type = SupportType.AUTO,
             detectionId = "KOTLIN",
             minVersion = "1.8.0",
-            maxVersion = "2.2.99",
+            maxVersion = "2.5.99",
             note = "Required for Coroutines and Compose instrumentation"
         ),
         TechItem(

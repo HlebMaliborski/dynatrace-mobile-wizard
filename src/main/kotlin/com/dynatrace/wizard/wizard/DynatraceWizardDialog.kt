@@ -169,7 +169,7 @@ class DynatraceWizardDialog(
             updateNavButtons()
         }
 
-        tabbedPane.preferredSize = Dimension(720, 580)
+        tabbedPane.preferredSize = Dimension(760, 640)
         return tabbedPane
     }
 

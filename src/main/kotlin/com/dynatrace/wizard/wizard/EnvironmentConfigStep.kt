@@ -117,7 +117,7 @@ class EnvironmentConfigStep {
             .addComponent(
                 JBLabel(
                     "<html>Enter your Dynatrace credentials. Find them in the Dynatrace portal " +
-                    "under <b>Settings → Mobile → Mobile apps</b>.</html>"
+                    "under <b>Mobile → (your app) → Settings → Instrumentation</b>.</html>"
                 ).apply {
                     foreground = UIUtil.getContextHelpForeground()
                     border = JBUI.Borders.emptyBottom(4)

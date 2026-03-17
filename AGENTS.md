@@ -35,7 +35,11 @@ DynatraceWizardAction (AnAction, Tools menu / context menu)
 | `gradle.properties` | All platform metadata: `platformType=IC`, `platformVersion=2024.1.7`, `pluginVersion`, `pluginSinceBuild` |
 | `service/GradleModificationService.kt` | String-manipulation-based Gradle file codegen; uses plugin version constraint `8.+` |
 | `service/SkillsExportService.kt` | Generates project-specific Markdown `skills.md` snapshots; writes them into the user's Android project |
-| `docs/skills/skills.md` | **Canonical AI skill** — full reference covering all plugin capabilities, flows, and DSL snippets; can be installed manually into any AI client without running the wizard |
+| `docs/skills/skills.md` | **Skill index** — routes AI agents to the correct topic-specific file; install all five files together |
+| `docs/skills/setup.md` | Plugin setup & configuration — Steps 1-4, full `dynatrace {}` DSL reference, multi-module patterns, manual startup, standalone instrumentation |
+| `docs/skills/sdk-apis.md` | OneAgent SDK APIs — user actions, value reporting, business events, `WebRequestTiming`, hybrid monitoring, `setBeaconHeaders`, session/privacy management |
+| `docs/skills/monitoring.md` | Monitoring features — app performance, web requests, W3C Trace Context, OkHttp modifier, crash/ANR/native crash, custom events, user/session management |
+| `docs/skills/troubleshooting.md` | Troubleshooting & limitations — general checklist, runtime Q&A, build error reference, instrumentation and build-specific limitations |
 | `service/ProjectDetectionService.kt` | Scans `baseDir` children for `build.gradle[.kts]`; checks for `com.android.application` to confirm Android project |
 | `util/ValidationUtil.kt` | `ValidationResult` sealed class; Application ID regex `[A-Za-z0-9_\-]+`; Beacon URL must be HTTPS |
 
