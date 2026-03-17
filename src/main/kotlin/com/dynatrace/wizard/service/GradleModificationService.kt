@@ -81,6 +81,8 @@ class GradleModificationService(private val project: Project) {
                 if (!config.webRequestsEnabled) appendLine("            webRequests { enabled(false) }")
                 if (!config.lifecycleEnabled) appendLine("            lifecycle { enabled(false) }")
                 if (!config.crashReporting) appendLine("            crashReporting(false)")
+                if (!config.anrReporting) appendLine("            anrReporting(false)")
+                if (!config.nativeCrashReporting) appendLine("            nativeCrashReporting(false)")
                 if (config.hybridMonitoring) appendLine("            hybridMonitoring(true)")
                 if (config.locationMonitoring) appendLine("            locationMonitoring(true)")
                 if (config.rageTapDetection) {
@@ -140,6 +142,8 @@ class GradleModificationService(private val project: Project) {
                 if (!config.webRequestsEnabled) appendLine("            webRequests { enabled false }")
                 if (!config.lifecycleEnabled) appendLine("            lifecycle { enabled false }")
                 if (!config.crashReporting) appendLine("            crashReporting false")
+                if (!config.anrReporting) appendLine("            anrReporting false")
+                if (!config.nativeCrashReporting) appendLine("            nativeCrashReporting false")
                 if (config.hybridMonitoring) appendLine("            hybridMonitoring true")
                 if (config.locationMonitoring) appendLine("            locationMonitoring true")
                 if (config.rageTapDetection) {

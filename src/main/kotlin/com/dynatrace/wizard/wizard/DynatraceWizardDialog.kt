@@ -346,6 +346,8 @@ class DynatraceWizardDialog(
         autoInstrument         = featureStep.isAutoInstrument(),
         pluginEnabled          = featureStep.isPluginEnabled(),
         crashReporting         = featureStep.isCrashReporting(),
+        anrReporting           = featureStep.isAnrReporting(),
+        nativeCrashReporting   = featureStep.isNativeCrashReporting(),
         hybridMonitoring       = featureStep.isHybridMonitoring(),
         userActionsEnabled     = featureStep.isUserActionsEnabled(),
         webRequestsEnabled     = featureStep.isWebRequestsEnabled(),

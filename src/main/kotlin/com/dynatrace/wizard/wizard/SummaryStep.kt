@@ -138,6 +138,8 @@ class SummaryStep {
             appendLine("Auto-start:               ${if (config.autoStartEnabled) "Enabled" else "Disabled — manual startup required"}")
             appendLine("Auto-instrumentation:     ${if (config.autoInstrument) "Enabled" else "Disabled"}")
             appendLine("Crash reporting:          ${if (config.crashReporting) "Enabled" else "Disabled"}")
+            appendLine("ANR reporting:            ${if (config.anrReporting) "Enabled" else "Disabled (Android 11+ only)"}")
+            appendLine("Native crash reporting:   ${if (config.nativeCrashReporting) "Enabled" else "Disabled (Android 11+ only)"}")
             appendLine("User opt-in mode:         ${if (config.userOptIn) "Enabled" else "Disabled"}")
             appendLine("Name privacy:             ${if (config.namePrivacy) "Enabled (action names masked)" else "Disabled"}")
             appendLine("Compose instrumentation:  ${if (config.composeEnabled) "Enabled" else "Disabled"}")

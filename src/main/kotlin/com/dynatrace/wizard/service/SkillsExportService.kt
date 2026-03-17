@@ -77,6 +77,8 @@ class SkillsExportService(private val project: Project? = null) {
             add("Auto-instrumentation: ${yesNo(dynatraceConfig.autoInstrument)}")
             add("Auto-start: ${yesNo(dynatraceConfig.autoStartEnabled)}")
             add("Crash reporting: ${yesNo(dynatraceConfig.crashReporting)}")
+            add("ANR reporting: ${yesNo(dynatraceConfig.anrReporting)}")
+            add("Native crash reporting: ${yesNo(dynatraceConfig.nativeCrashReporting)}")
             add("Session Replay: ${yesNo(dynatraceConfig.sessionReplayEnabled)}")
             add("User opt-in: ${yesNo(dynatraceConfig.userOptIn)}")
             add("Name privacy: ${yesNo(dynatraceConfig.namePrivacy)}")
@@ -491,7 +493,9 @@ dynatrace {
 | --- | --- | --- |
 | `webRequests { enabled(false) }` | `true` | Disable HTTP/network request monitoring |
 | `lifecycle { enabled(false) }` | `true` | Disable Activity/Fragment lifecycle monitoring |
-| `crashReporting(false)` | `true` | Disable crash reporting |
+| `crashReporting(false)` | `true` | Disable Java/Kotlin crash reporting |
+| `anrReporting(false)` | `true` | Disable ANR reporting (Android 11+) |
+| `nativeCrashReporting(false)` | `true` | Disable C/C++ NDK crash reporting (Android 11+) |
 | `hybridMonitoring(true)` | `false` | Enable WebView hybrid monitoring |
 | `locationMonitoring(true)` | `false` | Enable GPS location capture |
 | `sessionReplay.enabled(true)` | `false` | Enable Session Replay (requires Privacy approval) |
@@ -650,6 +654,196 @@ Dynatrace.startup(this, new DynatraceConfigurationBuilder(
 
 ---
 
+## Privacy & Data Collection
+
+OneAgent supports three `DataCollectionLevel` values:
+
+| Level | Description |
+| --- | --- |
+| `OFF` | No data is collected |
+| `PERFORMANCE` | Collects performance data (crashes, ANRs) |
+| `USER_BEHAVIOR` | Collects performance data + user behavior (user actions, sessions) |
+
+When `userOptIn(true)` is set and the user has not yet consented, defaults are `OFF` with crash reporting disabled.
+
+```kotlin
+import com.dynatrace.android.agent.Dynatrace
+import com.dynatrace.android.agent.conf.DataCollectionLevel
+
+// Apply after user consents
+val updatedOptions = Dynatrace.getUserPrivacyOptions().newBuilder()
+    .withDataCollectionLevel(DataCollectionLevel.USER_BEHAVIOR)
+    .withCrashReportingOptedIn(true)
+    .build()
+Dynatrace.applyUserPrivacyOptions(updatedOptions)
+```
+
+---
+
+## App Performance Monitoring
+
+OneAgent automatically captures:
+- **App Start events** — cold, warm, and hot starts; duration from process creation to first `onResume`
+- **Views** — one active view per screen (Activities auto-tracked; others need `startView`)
+- **Navigation events** — transitions between views
+- **View summaries** — aggregated events on view end
+
+Manual view tracking for fragments, Compose screens, or other non-Activity UI:
+
+```kotlin
+Dynatrace.startView("Login") // ends the previous view automatically
+```
+
+---
+
+## Web Request Monitoring
+
+OneAgent auto-instruments `HttpURLConnection` and `OkHttp` v3/4/5 (includes Retrofit 2).
+
+### W3C Trace Context (Distributed Tracing)
+
+Automatically propagated on every outgoing request when auto-instrumentation is enabled. For custom networking stacks:
+
+```kotlin
+val traceContext = Dynatrace.generateTraceContext(
+    request.header("traceparent"),
+    request.header("tracestate")
+) // returns null if invalid — do NOT modify headers in that case
+
+if (traceContext != null) {
+    request = request.newBuilder()
+        .header("traceparent", traceContext.traceparent)
+        .header("tracestate", traceContext.tracestate)
+        .build()
+}
+```
+
+### Manual Web Request Reporting
+
+```kotlin
+import com.dynatrace.android.agent.HttpRequestEventData
+
+val requestData = HttpRequestEventData("https://api.example.com/data", "GET")
+    .withDuration(250)
+    .withStatusCode(200)
+    .addEventProperty("event_properties.api_version", "v2")
+
+Dynatrace.sendHttpRequestEvent(requestData)
+```
+
+### OkHttp Event Modifier
+
+```kotlin
+val modifier: OkHttpEventModifier = object : OkHttpEventModifier {
+    override fun modifyEvent(request: Request, response: Response): JSONObject {
+        val event = JSONObject()
+        // Always use peekBody() — never body() — to avoid consuming the response stream
+        event.put("event_properties.body_preview", response.peekBody(500).toString())
+        return event
+    }
+    override fun modifyEvent(request: Request, throwable: Throwable): JSONObject = JSONObject()
+}
+Dynatrace.addHttpEventModifier(modifier)
+// Return null from either method to drop the event entirely
+```
+
+---
+
+## Error and Crash Reporting
+
+### ANR Reporting (Android 11+)
+
+Automatic. The app must be restarted within 10 minutes for the event to be sent. Disable:
+
+```kotlin
+// DSL
+anrReporting(false)
+
+// Manual startup
+DynatraceConfigurationBuilder("<id>", "<url>").withAnrReporting(false).buildConfiguration()
+```
+
+### Native Crash Reporting (Android 11+)
+
+Automatic for C/C++ NDK crashes. Disable:
+
+```kotlin
+// DSL
+nativeCrashReporting(false)
+
+// Manual startup
+DynatraceConfigurationBuilder("<id>", "<url>").withNativeCrashReporting(false).buildConfiguration()
+```
+
+### Manual Error Reporting
+
+```kotlin
+try {
+    // ...
+} catch (exception: Exception) {
+    Dynatrace.sendExceptionEvent(
+        ExceptionEventData(exception)
+            .addEventProperty("event_properties.context", "checkout")
+    )
+}
+```
+
+---
+
+## Custom Events
+
+Properties must be defined in the Dynatrace UI first (Experience Vitals → frontend → Settings → Event and session properties). Keys must be prefixed with `event_properties.`.
+
+```kotlin
+Dynatrace.sendEvent(
+    EventData()
+        .withDuration(250)
+        .addEventProperty("event_properties.checkout_step", "payment_confirmed")
+        .addEventProperty("event_properties.cart_value", 149.99)
+)
+```
+
+### Event Modifiers
+
+```kotlin
+val modifier = EventModifier { event ->
+    event.put("event_properties.build_type", BuildConfig.BUILD_TYPE)
+    event // return null to drop the event
+}
+Dynatrace.addEventModifier(modifier)
+
+// Remove when no longer needed
+Dynatrace.removeEventModifier(modifier)
+```
+
+Modifiable fields: `event_properties.*`, `session_properties.*`, `url.full`, `exception.stack_trace`.
+
+---
+
+## User and Session Management
+
+```kotlin
+// Tag session after login
+Dynatrace.identifyUser("user@example.com")
+
+// Clear on logout
+Dynatrace.identifyUser(null)
+```
+
+Session properties (must be pre-configured in Dynatrace UI, keys prefixed with `session_properties.`):
+
+```kotlin
+Dynatrace.sendSessionPropertyEvent(
+    SessionPropertyEventData()
+        .addSessionProperty("session_properties.product_tier", "premium")
+        .addSessionProperty("session_properties.cart_value", 149.99)
+)
+```
+
+> The user tag is **not persisted** — call `identifyUser()` on every new session. Session splits re-tag automatically; logout/privacy changes do not.
+
+---
+
 ## Common Issues
 
 | Symptom | Likely cause | Fix |
@@ -660,6 +854,12 @@ Dynatrace.startup(this, new DynatraceConfigurationBuilder(
 | Build fails: "No matching variant found" | `variantFilter` regex doesn't match any variant | Use `".*"` or match the exact variant name |
 | Duplicate plugin error | Both `com.dynatrace.instrumentation` and `.module` in same module | Remove the coordinator from the app module |
 | Session Replay not capturing | Missing privacy consent or flag disabled | Ensure `sessionReplay.enabled(true)` and runtime consent is granted |
+| ANR events not appearing | Android version < 11, or app not restarted within 10 min | ANR reporting requires Android 11+; relaunch app within 10 minutes |
+| Native crash events not appearing | Android version < 11, or app not restarted within 10 min | Native crash reporting requires Android 11+; relaunch app within 10 minutes |
+| No data after opt-in is enabled | `applyUserPrivacyOptions` not called after user consent | Call `Dynatrace.applyUserPrivacyOptions()` with `USER_BEHAVIOR` level after consent |
+| Event/session properties dropped | Property not configured in Dynatrace UI, or missing prefix | Define properties in UI first; use `event_properties.` / `session_properties.` prefix |
+| `OkHttpEventModifier` body exception | Using `body()` instead of `peekBody()` consumes the stream | Always use `response.peekBody(n)` inside the modifier |
+| App start duration shorter than expected | Agent started too late in manual startup | Call `Dynatrace.startup()` as early as possible in `Application.onCreate()` |
 
 ---
 
@@ -673,9 +873,7 @@ Dynatrace.startup(this, new DynatraceConfigurationBuilder(
 | --- | --- | --- |
 $installTableRows
 
----
-
-## Plugin Version Policy
+User-level = available to all projects; project-level = repository-only.
 
 The wizard uses `8.+` as the version constraint, allowing automatic minor and patch updates within the `8.x` major line. Bump the major version manually after reviewing Dynatrace release notes.
 

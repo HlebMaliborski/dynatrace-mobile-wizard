@@ -32,6 +32,8 @@ class FeatureToggleStep {
     val webRequestsCheckBox = JBCheckBox("Web request monitoring", true)
     val lifecycleCheckBox = JBCheckBox("Lifecycle monitoring", true)
     val crashReportingCheckBox = JBCheckBox("Crash reporting", true)
+    val anrReportingCheckBox = JBCheckBox("ANR (Application Not Responding) reporting", true)
+    val nativeCrashReportingCheckBox = JBCheckBox("Native crash reporting (NDK)", true)
 
     // --- Compose & Behavioral ---
     val composeEnabledCheckBox = JBCheckBox("Jetpack Compose auto-instrumentation", true)
@@ -126,6 +128,14 @@ class FeatureToggleStep {
             .addVerticalGap(4)
             .addComponent(checkboxItem(crashReportingCheckBox,
                 "Capture uncaught exceptions with full stack traces (not sent if older than 10 min)."))
+            .addVerticalGap(4)
+            .addComponent(checkboxItem(anrReportingCheckBox,
+                "Detect Application Not Responding events on Android 11+. " +
+                "Requires app restart within 10 min to send the event."))
+            .addVerticalGap(4)
+            .addComponent(checkboxItem(nativeCrashReportingCheckBox,
+                "Capture C/C++ (NDK) crashes on Android 11+. " +
+                "Requires app restart within 10 min to send the event."))
             // ── Compose & Behavioral Events ───────────────────────────────────
             .addComponent(TitledSeparator("Compose & Behavioral Events"))
             .addComponent(checkboxItem(composeEnabledCheckBox,
@@ -191,10 +201,15 @@ class FeatureToggleStep {
             .addComponent(TitledSeparator("Documentation"))
             .addComponent(DocumentationLinks.createLinkLabel("Configure Plugin for Instrumentation", DocumentationLinks.CONFIGURE_PLUGIN))
             .addComponent(DocumentationLinks.createLinkLabel("Monitoring Capabilities", DocumentationLinks.MONITORING_CAPABILITIES))
-            .addComponent(DocumentationLinks.createLinkLabel("Crash Reporting", DocumentationLinks.CRASH_REPORTING))
+            .addComponent(DocumentationLinks.createLinkLabel("Crash, ANR & Native Crash Reporting", DocumentationLinks.ERROR_CRASH_REPORTING))
             .addComponent(DocumentationLinks.createLinkLabel("User Privacy & Opt-In", DocumentationLinks.USER_OPT_IN))
+            .addComponent(DocumentationLinks.createLinkLabel("Privacy & Data Collection", DocumentationLinks.PRIVACY_DATA_COLLECTION))
+            .addComponent(DocumentationLinks.createLinkLabel("Web Request Monitoring", DocumentationLinks.WEB_REQUEST_MONITORING))
+            .addComponent(DocumentationLinks.createLinkLabel("Custom Events", DocumentationLinks.CUSTOM_EVENTS))
+            .addComponent(DocumentationLinks.createLinkLabel("User & Session Management", DocumentationLinks.USER_SESSION_MANAGEMENT))
             .addComponent(DocumentationLinks.createLinkLabel("Adjust OneAgent Configuration", DocumentationLinks.ADJUST_ONEAGENT))
             .addComponent(DocumentationLinks.createLinkLabel("Multi-Module Projects", DocumentationLinks.MULTI_MODULE))
+            .addComponent(DocumentationLinks.createLinkLabel("Support & Limitations", DocumentationLinks.SUPPORT_LIMITATIONS))
             .addVerticalGap(8)
             .panel
             .also { it.border = JBUI.Borders.empty(8, 12, 12, 12) }
@@ -261,6 +276,8 @@ class FeatureToggleStep {
     fun isWebRequestsEnabled(): Boolean = webRequestsCheckBox.isSelected
     fun isLifecycleEnabled(): Boolean = lifecycleCheckBox.isSelected
     fun isCrashReporting(): Boolean = crashReportingCheckBox.isSelected
+    fun isAnrReporting(): Boolean = anrReportingCheckBox.isSelected
+    fun isNativeCrashReporting(): Boolean = nativeCrashReportingCheckBox.isSelected
     fun isComposeEnabled(): Boolean = composeEnabledCheckBox.isSelected
     fun isRageTapDetection(): Boolean = rageTapCheckBox.isSelected
     fun isUserOptIn(): Boolean = userOptInCheckBox.isSelected
@@ -285,6 +302,8 @@ class FeatureToggleStep {
         webRequestsCheckBox.isSelected          = config.webRequestsEnabled
         lifecycleCheckBox.isSelected            = config.lifecycleEnabled
         crashReportingCheckBox.isSelected       = config.crashReporting
+        anrReportingCheckBox.isSelected         = config.anrReporting
+        nativeCrashReportingCheckBox.isSelected = config.nativeCrashReporting
         composeEnabledCheckBox.isSelected       = config.composeEnabled
         rageTapCheckBox.isSelected              = config.rageTapDetection
         userOptInCheckBox.isSelected            = config.userOptIn
