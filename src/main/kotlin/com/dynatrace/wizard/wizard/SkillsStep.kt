@@ -191,32 +191,39 @@ class SkillsStep(private val project: Project? = null) {
             return
         }
 
+        val client = getSkillClient()
+        val scope  = getSkillInstallScope()
         val config = SkillsExportConfig(
-            skillClient       = getSkillClient(),
-            skillInstallScope = getSkillInstallScope(),
+            skillClient       = client,
+            skillInstallScope = scope,
             skillFilePath     = skillFilePathField.text.trim()
         )
         val result = SkillsExportService(project).detectExistingSkills(info, config)
+
+        // One-line context shown in every state: "Claude Code · Project-level · path/"
+        val context = "<span style='color:gray'>${client.label} &middot; ${scope.label}" +
+                      " &middot; <code>${result.directory}/</code></span>"
 
         when {
             result.isFullInstall -> {
                 detectionStatusLabel.text =
                     "<html><b>${result.foundFiles.size} / ${result.totalFiles} files already installed</b>" +
-                    " &nbsp;<span style='color:gray'>${result.foundFiles.joinToString(" \u00b7 ")}</span></html>"
+                    " &nbsp; $context<br>" +
+                    "<span style='color:gray'>${result.foundFiles.joinToString(" \u00b7 ")}</span></html>"
                 detectionStatusLabel.foreground = WizardColors.success
             }
             result.isPartialInstall -> {
                 val missing = SkillsExportService.ALL_SKILL_FILES - result.foundFiles.toSet()
                 detectionStatusLabel.text =
-                    "<html><b>${result.foundFiles.size} / ${result.totalFiles} files found</b> (partial install)<br>" +
+                    "<html><b>${result.foundFiles.size} / ${result.totalFiles} files found</b>" +
+                    " (partial install) &nbsp; $context<br>" +
                     "<span style='color:gray'>Found: ${result.foundFiles.joinToString(", ")}</span><br>" +
                     "<span style='color:gray'>Missing: ${missing.joinToString(", ")}</span></html>"
                 detectionStatusLabel.foreground = WizardColors.warning
             }
             else -> {
                 detectionStatusLabel.text =
-                    "<html><span style='color:gray'>No existing skill files found" +
-                    " at ${result.directory}/</span></html>"
+                    "<html><span style='color:gray'>No existing skill files found &nbsp; $context</span></html>"
                 detectionStatusLabel.foreground = UIUtil.getContextHelpForeground()
             }
         }

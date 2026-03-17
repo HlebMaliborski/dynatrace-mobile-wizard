@@ -60,9 +60,8 @@ object DocumentationLinks {
     const val STANDALONE_INSTRUMENTATION =
         "https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications/instrument-android-app/manually-instrument-application-oneagent-sdk-android"
 
-    // Support & limitations
     // Debug logging
-    const val DEBUG_LOGGING           = "$BASE/enable-debug-logging"
+    const val DEBUG_LOGGING = "https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications/instrument-android-app/debug-logging-oneagent"
 
     const val SUPPORT_LIMITATIONS     = "https://docs.dynatrace.com/docs/observe/digital-experience/new-rum-experience/mobile-frontends/android/id-02-support-and-limitations"
 

@@ -10,7 +10,9 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.BorderLayout
 import java.awt.Color
-import java.awt.GridLayout
+import java.awt.GridBagConstraints
+import java.awt.GridBagLayout
+import java.awt.Insets
 import javax.swing.BorderFactory
 import javax.swing.JComponent
 import javax.swing.JPanel
@@ -98,9 +100,7 @@ class SupportedTechnologiesStep {
             minVersion = "1.8.0",
             maxVersion = "2.3.99",
             note = "Required for Coroutines and Compose instrumentation",
-            noteWhenInRange = "Kotlin versions in this range should work without issues. " +
-                "Dynatrace typically trails Kotlin by 1–2 minor versions, " +
-                "so expect no problems if you stay in the 1.8–2.3 range."
+            noteWhenInRange = "Tested up to 2.3 — newer versions will probably work, but check Dynatrace release notes before upgrading."
         ),
         TechItem(
             name = "Jetpack Compose",
@@ -370,11 +370,13 @@ class SupportedTechnologiesStep {
         )
         builder.addComponent(
             JBLabel(
-                "<html>Versions detected in your project vs. the Dynatrace-supported range.<br>" +
-                "<b style='color:green'>Green</b> = compatible · " +
-                "<b style='color:#C76B00'>Amber</b> = likely compatible, probably no issues · " +
-                "<b style='color:red'>Red</b> = unsupported version · " +
-                "Grey = not detected in project.</html>"
+                "<html>" +
+                "Versions detected in your project vs. the Dynatrace-supported range.<br>" +
+                "<b style='color:green'>Green</b> = compatible &nbsp;·&nbsp; " +
+                "<b style='color:#C76B00'>Amber</b> = likely compatible &nbsp;·&nbsp; " +
+                "<b style='color:red'>Red</b> = unsupported version &nbsp;·&nbsp; " +
+                "Grey = not in project" +
+                "</html>"
             ).apply {
                 foreground = UIUtil.getContextHelpForeground()
                 border     = JBUI.Borders.emptyBottom(8)
@@ -417,7 +419,7 @@ class SupportedTechnologiesStep {
             ))
             builder.addVerticalGap(4)
             builder.addComponent(DocumentationLinks.createLinkLabel(
-                "Build-specific limitations →", DocumentationLinks.BUILD_SPECIFIC_LIMITATIONS))
+                "Build-specific limitations", DocumentationLinks.BUILD_SPECIFIC_LIMITATIONS))
             builder.addComponent(DocumentationLinks.createLinkLabel(
                 "Compatibility with other monitoring tools", DocumentationLinks.COMPATIBILITY_MONITORING_TOOLS))
         }
@@ -438,16 +440,50 @@ class SupportedTechnologiesStep {
     // ── Grid builder ──────────────────────────────────────────────────────────
 
     private fun techGrid(items: List<TechItem>, content: String): JComponent {
-        val grid = JPanel(GridLayout(0, 4, JBUI.scale(14), JBUI.scale(4)))
-        grid.isOpaque = false
-        grid.border   = JBUI.Borders.emptyLeft(4)
+        val panel = JPanel(GridBagLayout())
+        panel.isOpaque = false
+        panel.border   = JBUI.Borders.emptyLeft(4)
 
-        listOf("Technology", "In Your Project", "Supported", "Status").forEach { h ->
-            grid.add(JBLabel(h).apply {
-                font       = JBUI.Fonts.label().asBold()
-                foreground = UIUtil.getContextHelpForeground()
+        val hGap = JBUI.scale(14)   // horizontal gap between columns
+        val vPad = JBUI.scale(2)    // top inset inside each data cell
+        val rowGap = JBUI.scale(3)  // extra gap before each data row
+
+        var nextRow = 0
+
+        // Adds one 4-column data row to the GridBagLayout panel.
+        fun dataRow(
+            c0: JComponent, c1: JComponent, c2: JComponent, c3: JComponent,
+            topInset: Int = rowGap
+        ) {
+            val r = nextRow++
+            fun gbc(col: Int, wx: Double, rightInset: Int) = GridBagConstraints().apply {
+                gridx   = col; gridy = r
+                weightx = wx;  fill  = GridBagConstraints.HORIZONTAL
+                insets  = Insets(topInset, 0, 0, rightInset)
+                ipady   = vPad
+            }
+            panel.add(c0, gbc(0, 0.38, hGap))
+            panel.add(c1, gbc(1, 0.20, hGap))
+            panel.add(c2, gbc(2, 0.20, hGap))
+            panel.add(c3, gbc(3, 0.22, 0))
+        }
+
+        // Adds a full-width hint/note row (spans all 4 columns).
+        fun hintRow(label: JComponent) {
+            panel.add(label, GridBagConstraints().apply {
+                gridx     = 0;   gridy     = nextRow++
+                gridwidth = 4;   weightx   = 1.0
+                fill      = GridBagConstraints.HORIZONTAL
+                insets    = Insets(0, JBUI.scale(22), vPad, 0)
             })
         }
+
+        // Header row (no top inset)
+        fun hdr(text: String) = JBLabel(text).apply {
+            font       = JBUI.Fonts.label().asBold()
+            foreground = UIUtil.getContextHelpForeground()
+        }
+        dataRow(hdr("Technology"), hdr("Detected"), hdr("Supported"), hdr("Status"), topInset = 0)
 
         items.forEach { item ->
             val result = detectItem(item, content)
@@ -467,7 +503,7 @@ class SupportedTechnologiesStep {
                     "✅", "Compatible (BOM)", WizardColors.success, result.detectedVersion, true
                 )
                 result.inRange && item.noteWhenInRange.isNotBlank() -> Row(
-                    "⚠️", "Likely compatible", WizardColors.warning, result.detectedVersion, true
+                    "⚠", "Likely compatible", WizardColors.warning, result.detectedVersion, true
                 )
                 result.inRange -> Row(
                     "✅", "Compatible", WizardColors.success, result.detectedVersion, true
@@ -477,50 +513,53 @@ class SupportedTechnologiesStep {
                 )
             }
 
-            grid.add(JBLabel("$icon  ${item.name}").apply {
-                font = if (isBold) JBUI.Fonts.label().asBold() else JBUI.Fonts.label()
-            })
-            grid.add(JBLabel(detectedText).apply {
-                font = if (isBold) JBUI.Fonts.label().asBold() else JBUI.Fonts.label()
-                foreground = when {
-                    item.type == SupportType.BUILT_IN && result.detectedVersion != null -> UIUtil.getLabelForeground()
-                    result.detectedVersion == null -> UIUtil.getContextHelpForeground()
-                    result.detectedVersion == "BOM" || result.detectedVersion.startsWith("BOM ") -> WizardColors.success
-                    result.inRange && item.noteWhenInRange.isNotBlank() -> WizardColors.warning
-                    result.inRange -> WizardColors.success
-                    else           -> WizardColors.error
+            dataRow(
+                JBLabel("$icon  ${item.name}").apply {
+                    font = if (isBold) JBUI.Fonts.label().asBold() else JBUI.Fonts.label()
+                },
+                JBLabel(detectedText).apply {
+                    font = if (isBold) JBUI.Fonts.label().asBold() else JBUI.Fonts.label()
+                    foreground = when {
+                        item.type == SupportType.BUILT_IN && result.detectedVersion != null -> UIUtil.getLabelForeground()
+                        result.detectedVersion == null -> UIUtil.getContextHelpForeground()
+                        result.detectedVersion == "BOM" || result.detectedVersion.startsWith("BOM ") -> WizardColors.success
+                        result.inRange && item.noteWhenInRange.isNotBlank() -> WizardColors.warning
+                        result.inRange -> WizardColors.success
+                        else           -> WizardColors.error
+                    }
+                },
+                JBLabel(item.versionLabel).apply {
+                    foreground = UIUtil.getContextHelpForeground()
+                },
+                JBLabel(statusText).apply {
+                    foreground = statusColor
                 }
-            })
-            grid.add(JBLabel(item.versionLabel).apply {
-                foreground = UIUtil.getContextHelpForeground()
-            })
-            grid.add(JBLabel(statusText).apply {
-                foreground = statusColor
-            })
+            )
 
-            // Hint row for "likely compatible" (in-range but soft upper bound)
+            // Inline hint for "likely compatible" (amber soft-bound note)
             if (result.inRange && item.noteWhenInRange.isNotBlank() && result.detectedVersion != null) {
-                grid.add(JBLabel("<html><i>${item.noteWhenInRange}</i></html>").apply {
+                hintRow(JBLabel("<html><i>${item.noteWhenInRange}</i></html>").apply {
                     font       = JBUI.Fonts.smallFont()
                     foreground = WizardColors.warning
-                    border     = JBUI.Borders.empty(0, JBUI.scale(24), 2, 0)
                 })
-                repeat(3) { grid.add(JPanel().apply { isOpaque = false }) }
             }
 
-            // Hint row: label in col 0, 3 blank fillers for cols 1–3
+            // Inline hint for out-of-range (error note)
             if (!result.inRange && result.detectedVersion != null && item.type == SupportType.AUTO) {
-                grid.add(JBLabel(
-                    "<html><i>${item.note.ifBlank { "Check Dynatrace release notes for this version." }}</i></html>"
-                ).apply {
+                hintRow(JBLabel("<html><i>${item.note.ifBlank { "Check Dynatrace release notes for this version." }}</i></html>").apply {
                     font       = JBUI.Fonts.smallFont()
                     foreground = WizardColors.error
-                    border     = JBUI.Borders.empty(0, JBUI.scale(24), 2, 0)
                 })
-                repeat(3) { grid.add(JPanel().apply { isOpaque = false }) }
             }
         }
-        return grid
+
+        // Vertical filler — pushes all rows to the top so they stay compact
+        panel.add(JPanel().apply { isOpaque = false }, GridBagConstraints().apply {
+            gridx = 0; gridy = nextRow; gridwidth = 4; weighty = 1.0
+            fill  = GridBagConstraints.VERTICAL
+        })
+
+        return panel
     }
 
     // ── Notice panel ──────────────────────────────────────────────────────────

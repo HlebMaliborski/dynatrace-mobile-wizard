@@ -19,10 +19,8 @@ configuration for Android projects through a guided wizard dialog.
 ![Features tab](docs/screenshots/wizard/05-features.png)
 
 ![Skills tab](docs/screenshots/wizard/06-skills.png)
-<!-- TODO: replace 06-skills.png with an actual screenshot of the Skills / AI tab -->
 
 ![Summary tab](docs/screenshots/wizard/07-summary.png)
-<!-- TODO: rename 06-summary.png → 07-summary.png to match the new tab order -->
 
 ## Features
 

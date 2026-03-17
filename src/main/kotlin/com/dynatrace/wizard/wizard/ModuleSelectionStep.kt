@@ -247,10 +247,13 @@ class ModuleSelectionStep {
                 }
             )
 
-            // Always build checkboxes — regardless of which radio is selected initially —
-            // so switching approach at runtime always has a populated checkbox list.
+            // Pre-check modules based on their current state:
+            //  - Re-run (any module already configured): only check the already-instrumented ones.
+            //  - Fresh setup (nothing configured yet): check all as a convenience default.
+            val anyAlreadyConfigured = info.appModules.any { it.hasDynatrace }
             info.appModules.forEach { m ->
-                val checkBox = JBCheckBox(m.name, true)
+                val initiallyChecked = if (anyAlreadyConfigured) m.hasDynatrace else true
+                val checkBox = JBCheckBox(m.name, initiallyChecked)
                 checkBox.addActionListener { updateAppSelectionSummary(info.appModules) }
                 appCheckboxes += m to checkBox
             }
@@ -476,7 +479,8 @@ class ModuleSelectionStep {
     private fun buildPerModuleCheckboxesPanel(info: ProjectDetectionService.ProjectInfo): JComponent {
         val b = FormBuilder.createFormBuilder()
         if (info.appModules.size > 1) {
-            val selectAllCb = JBCheckBox("Select all app modules", true)
+            val allChecked = appCheckboxes.all { it.second.isSelected }
+            val selectAllCb = JBCheckBox("Select all app modules", allChecked)
             selectAllCb.addActionListener {
                 appCheckboxes.forEach { (_, cb) -> cb.isSelected = selectAllCb.isSelected }
                 updateAppSelectionSummary(info.appModules)
