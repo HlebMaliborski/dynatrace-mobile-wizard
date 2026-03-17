@@ -1,11 +1,6 @@
 package com.dynatrace.wizard.service
 
-import com.dynatrace.wizard.model.DynatraceConfig
-import com.dynatrace.wizard.model.SkillCapability
-import com.dynatrace.wizard.model.SkillClient
-import com.dynatrace.wizard.model.SkillInstallLocation
-import com.dynatrace.wizard.model.SkillInstallScope
-import com.dynatrace.wizard.model.SkillsExportConfig
+import com.dynatrace.wizard.model.*
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.guessProjectDir
@@ -48,12 +43,12 @@ class SkillsExportService(private val project: Project? = null) {
         generatedAt: Instant = Instant.now()
     ): String {
         val selectedAppModules = projectInfo.appModules.map { it.name }.ifEmpty { listOf(projectInfo.appModuleName) }
-        val featureModules     = projectInfo.featureModules.map { it.name }
-        val libraryModules     = projectInfo.libraryModules.map { it.name }
-        val isKts              = projectInfo.isKotlinDsl
-        val usesPluginDsl      = projectInfo.usesPluginDsl
+        val featureModules = projectInfo.featureModules.map { it.name }
+        val libraryModules = projectInfo.libraryModules.map { it.name }
+        val isKts = projectInfo.isKotlinDsl
+        val usesPluginDsl = projectInfo.usesPluginDsl
 
-        val blockKts    = GradleModificationService.buildDynatraceBlockKts(dynatraceConfig)
+        val blockKts = GradleModificationService.buildDynatraceBlockKts(dynatraceConfig)
         val blockGroovy = GradleModificationService.buildDynatraceBlockGroovy(dynatraceConfig)
 
         val installTableRows = buildInstallLocations().joinToString("\n") {
@@ -94,8 +89,8 @@ class SkillsExportService(private val project: Project? = null) {
 
         val exclusionsSection = buildString {
             val pkgs = dynatraceConfig.excludePackages.ifBlank { "None" }
-            val cls  = dynatraceConfig.excludeClasses.ifBlank { "None" }
-            val mth  = dynatraceConfig.excludeMethods.ifBlank { "None" }
+            val cls = dynatraceConfig.excludeClasses.ifBlank { "None" }
+            val mth = dynatraceConfig.excludeMethods.ifBlank { "None" }
             appendLine("- Packages: $pkgs")
             appendLine("- Classes:  $cls")
             append("- Methods:  $mth")
@@ -136,7 +131,7 @@ Dynatrace.startup(this, new DynatraceConfigurationBuilder(
         // OneAgent SDK section pre-filled with real module names
         val sdkSection = if (sdkLibraryModules.isNotEmpty()) {
             val nameList = sdkLibraryModules.map { it.name }
-            val allLib   = projectInfo.libraryModules.map { it.name }
+            val allLib = projectInfo.libraryModules.map { it.name }
             val filterAll = nameList.size == allLib.size
             val filterBlock = if (filterAll) """
 subprojects {
@@ -184,7 +179,8 @@ Add this block to the **root** `build.gradle.kts`:
         val pluginApplySection = if (usesPluginDsl) """
 **This project uses Plugin DSL.** Add to the root `build.gradle${if (isKts) ".kts" else ""}`:
 
-${if (isKts) """```kotlin
+${
+            if (isKts) """```kotlin
 plugins {
     id("com.dynatrace.instrumentation") version "8.+"
 }
@@ -192,11 +188,13 @@ plugins {
 plugins {
     id 'com.dynatrace.instrumentation' version '8.+'
 }
-```"""}
+```"""
+        }
 """ else """
 **This project uses Buildscript Classpath.** Add to the root `build.gradle${if (isKts) ".kts" else ""}`:
 
-${if (isKts) """```kotlin
+${
+            if (isKts) """```kotlin
 buildscript {
     repositories { mavenCentral(); google() }
     dependencies {
@@ -220,7 +218,8 @@ buildscript {
 Then in each app module `build.gradle`:
 ```groovy
 apply plugin: 'com.dynatrace.instrumentation'
-```"""}
+```"""
+        }
 """
 
         return """
@@ -258,6 +257,11 @@ Contains the **exact configuration for this project** plus the complete setup re
 - User asks about hybrid app monitoring, `instrumentWebView`, `withMonitoredDomains`, or `restoreCookies`
 - User asks about `setBeaconHeaders`, `CommunicationProblemListener`, or custom auth headers
 - User wants standalone instrumentation without the Gradle plugin
+- User asks why a Dynatrace-related build fails or sees a Dynatrace Gradle plugin error message
+- User asks why OneAgent is not sending data or monitoring data is missing
+- User asks why a user action or UI component is not captured
+- User asks about compatibility with other performance monitoring plugins
+- User wants to troubleshoot missing web requests, user actions, crashes, or ANR events
 $manualStartupSection
 ---
 
@@ -984,6 +988,114 @@ Dynatrace.sendSessionPropertyEvent(
 
 ---
 
+## Limitations
+
+### Runtime limitations
+
+- **HTTP** — Only `HttpURLConnection` and `OkHttp` (v3/4/5) are auto-instrumented; all other frameworks require manual instrumentation
+- **WebSocket and non-HTTP protocols** — require manual instrumentation; connections must close within ~9 minutes
+- **Custom actions** — maximum duration 9 minutes; actions open longer are discarded. Maximum name length 250 characters
+- **Business events** — only captured in active monitored sessions; not sent when OneAgent is disabled
+- **ANR and native crash reporting** — available only on Android 11+; app must be restarted within 10 minutes
+- **Events per minute** — default limit is 1,000 events per minute; exceeding this may result in dropped events
+- **Direct Boot** — do not call `Dynatrace.startup` from a Direct Boot aware component
+- **Offline data** — Dynatrace discards monitoring data older than 10 minutes when the app is offline
+- **Truncated values** — action names, reported values, and web request URLs are truncated at 250 characters
+
+### Instrumentation-specific limitations
+
+The Dynatrace Android Gradle plugin instruments `AndroidManifest.xml` and `.class` files only. The following are **not** instrumented:
+
+- **Native code (NDK)** — code written with the Android NDK
+- **Web components** — `.html` and `.js` files
+- **Resource files** — layout `.xml` files and other Android resources
+- **WebView content** — JavaScript inside a WebView; use hybrid monitoring to correlate WebView sessions
+
+### Compatibility with other monitoring tools
+
+Using multiple performance monitoring plugins simultaneously may cause compatibility issues, especially when other plugins also instrument the Android runtime. Use only one monitoring plugin, or verify compatibility through manual testing before releasing to production.
+
+### Build-specific limitations
+
+- **Android library projects** — the plugin auto-instruments only `com.android.application` projects; library code is instrumented when the library is a dependency of an app module
+- **Android Gradle plugin `excludes` property** — disables instrumentation for ALL specified classes including Dynatrace-critical ones; use Dynatrace's `exclude { }` block instead
+- **`com.dynatrace.instrumentation` must be at root** — applying the coordinator plugin inside an app module build file causes a build error
+- **`com.dynatrace.instrumentation` and `com.dynatrace.instrumentation.module` are mutually exclusive** — using both in the same module causes a build error
+
+---
+
+## Troubleshooting
+
+### General checklist
+
+Before investigating a specific symptom, verify:
+
+1. **Technology is supported** — check the Supported Versions table. ANR and native-crash reporting require Android 11+.
+2. **Plugin version is current** — ensure you are on a supported `8.x` release.
+3. **Debug logging is enabled** — add `debug { agentLogging(true) }`, reproduce the issue, review Logcat filtered by tag `dtx|caa`. Remove before production.
+4. **Credentials are correct** — `applicationId` and `beaconUrl` match values from Dynatrace → Mobile → Settings → Instrumentation. Beacon URL must use `https://`.
+5. **Network Security Configuration** includes system CA certificates and does not block the beacon endpoint.
+6. **Dynatrace endpoint is reachable** from the test device's network.
+7. **No other monitoring plugin is interfering** — see Compatibility with other monitoring tools above.
+
+---
+
+### Why is OneAgent not sending monitoring data?
+
+- `applicationId` and `beaconUrl` are correct (copy from Dynatrace → Mobile → Settings → Instrumentation)
+- Beacon URL uses `https://`
+- `userOptIn` is `false`, or `Dynatrace.applyUserPrivacyOptions()` has been called with `USER_BEHAVIOR` after user consent
+- `pluginEnabled` is not set to `false`
+- `autoStart { enabled(false) }` is not set unless calling `Dynatrace.startup()` manually
+
+For hybrid apps: `Dynatrace.instrumentWebView(webView)` is called **before** `webView.loadUrl(...)`, and `hybridMonitoring(true)` plus `withMonitoredDomains(...)` are configured.
+
+---
+
+### Why are some web requests missing?
+
+- **Unsupported HTTP library** — only `HttpURLConnection` and `OkHttp` (v3/4/5) are auto-instrumented; use manual `HttpRequestEventData` or `WebRequestTiming` for others
+- **Firebase plugin conflict** — the Firebase Gradle plugin can interfere with OkHttp instrumentation
+- **Request made outside an active session** — requests are only captured when OneAgent is running
+
+---
+
+### Why are web requests not associated with a user action?
+
+OneAgent attaches web requests to a user action only within a window from when the action opens until **500 ms after** the action closes. Requests outside this window are captured as standalone events. Extend the window via `userActions.timeout` in the `dynatrace {}` block.
+
+---
+
+### Why does my UI component not generate a user action?
+
+- **WebView component** — UI inside a WebView is not auto-captured; use hybrid monitoring
+- **Unsupported listener type** — only standard Android listeners are instrumented
+- **Unsupported Jetpack Compose component** — not all composables are instrumented; check the supported component list in Dynatrace documentation
+
+---
+
+### Why does Dynatrace not monitor Jetpack Compose in Android Studio's interactive preview?
+
+Interactive preview runs in a sandbox with no network access. Bytecode instrumentation is skipped and OneAgent is never started. This is expected — run on a real device or emulator to verify instrumentation.
+
+---
+
+### Build error reference
+
+| Error message | Cause | Fix |
+| --- | --- | --- |
+| `OneAgent SDK version does not match Dynatrace Android Gradle plugin version` | SDK JAR and plugin version mismatch | Remove the explicit SDK dependency version; let the plugin inject it via `agentDependency()` |
+| `Plugin with id 'com.dynatrace.instrumentation' not found` | Plugin classpath entry missing | Add plugin to root build file; ensure `mavenCentral()` is in plugin repositories |
+| `Could not find com.dynatrace.tools.android:gradle-plugin:<version>` | Version not found on Maven Central, or `mavenCentral()` missing | Verify version on Maven Central; add `mavenCentral()` to `pluginManagement.repositories` |
+| `Could not get unknown property 'dynatrace' for DefaultDependencyHandler` | `dynatrace {}` block appears before `apply plugin` | Always apply the plugin **before** the `dynatrace {}` block |
+| `No configuration for the Dynatrace Android Gradle plugin found!` | Plugin applied but no `dynatrace {}` block provided | Add a `dynatrace { configurations { … } }` block |
+| `Task 'printVariantAffiliation' not found in project :<module>` | Plugin only generates tasks for app modules | Run `printVariantAffiliation` on an app module, not a library or root module |
+| `The Dynatrace Android Gradle Plugin can only be applied to Android projects` | Plugin applied to a non-Android module | Only apply to modules using `com.android.application` or `com.android.library` |
+| `The Dynatrace Android Gradle plugin must be applied in the top-level build.gradle` | Coordinator plugin applied in an app module | Move the coordinator plugin to the root build file |
+| `It is not possible to use both 'com.dynatrace.instrumentation' and 'com.dynatrace.instrumentation.module'` | Both plugins applied to the same module | Remove the coordinator from the module; use only `com.dynatrace.instrumentation.module` |
+
+---
+
 ## Skill Installation
 
 - Target client: `${skillsConfig.skillClient.label}`
@@ -1012,7 +1124,8 @@ The wizard uses `8.+` as the version constraint, allowing automatic minor and pa
         deselectedModules: List<ProjectDetectionService.ModuleInfo> = emptyList()
     ): String {
         val outputPath = resolveOutputPath(skillsConfig)
-        val content = generateSkillsMarkdown(projectInfo, dynatraceConfig, skillsConfig, sdkLibraryModules, deselectedModules)
+        val content =
+            generateSkillsMarkdown(projectInfo, dynatraceConfig, skillsConfig, sdkLibraryModules, deselectedModules)
         val root = resolveWriteRoot(projectInfo, skillsConfig.skillInstallScope)
             ?: throw IllegalStateException("Could not resolve destination for skills.md export.")
 
