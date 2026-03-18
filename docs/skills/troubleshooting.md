@@ -28,6 +28,153 @@ disable-model-invocation: true
 - User wants to troubleshoot missing web requests, user actions, crashes, or ANR events
 - User asks about instrumentation limitations (NDK, WebView, resource files, library projects)
 - User asks about `Could not find gradle-plugin`, `Plugin not found`, or any Dynatrace build error
+- User says **"it's not working"** or **"I don't see any data"** — start with the Decision Tree below
+- User asks why **Compose**, **OkHttp**, **Retrofit**, or any specific library is not instrumented
+- User asks about **events limit**, **data being dropped**, or **offline behaviour**
+- User asks why **Session Replay** is not recording
+
+---
+
+## When to Ask for Clarification
+
+Ask only when the decision tree stalls and the answer changes the fix:
+
+| Unknown | Question to ask |
+| --- | --- |
+| Cannot tell if build failed or runtime issue | "Does the problem occur during Gradle build, or does the app build fine but data is missing in Dynatrace?" |
+| Cannot tell Android version | "Which Android version is the test device running? (ANR and native crash reporting require Android 11+)" |
+| Cannot tell opt-in state | "Is `userOptIn(true)` set in the `dynatrace {}` block? If so, has the user consented in the app?" |
+| Cannot tell if data ever appeared | "Has data ever appeared in Dynatrace for this app, or is this a fresh setup?" |
+
+---
+
+## Decision Tree — Start Here
+
+Use this tree before diving into specific sections. Follow branches until you reach a fix or a pointer to a deeper section.
+
+```
+START
+│
+├─ Is the problem a BUILD ERROR (Gradle sync or compile fails)?
+│   └─ YES → go to "Build Error Reference" section
+│
+├─ Does the app BUILD but NO DATA appears in Dynatrace?
+│   │
+│   ├─ 1. Is debug logging enabled? (add `debug { agentLogging(true) }` temporarily)
+│   │       → Filter Logcat by tags `dtx` and `caa`
+│   │       → See "Verify Monitoring is Working" in monitoring.md for expected log lines
+│   │
+│   ├─ 2. Log says "OneAgent disabled" or "pluginEnabled is false"?
+│   │       → Remove `pluginEnabled(false)` from the DSL
+│   │
+│   ├─ 3. Log says "Data collection level: OFF"?
+│   │       → userOptIn is enabled but user hasn't consented
+│   │       → Call applyUserPrivacyOptions with DataCollectionLevel.USER_BEHAVIOR after consent
+│   │
+│   ├─ 4. Log shows HTTP 403 or 404 on beacon URL?
+│   │       → 403: credentials wrong or auth header rejected — verify applicationId + beaconUrl
+│   │       → 404: wrong Beacon URL — copy from Dynatrace → Mobile → Settings → Instrumentation
+│   │
+│   ├─ 5. Log shows certificate error?
+│   │       → Cluster uses a private CA → add CA cert to network_security_config.xml
+│   │
+│   ├─ 6. No log output at all?
+│   │       → Plugin was not applied, or auto-instrumentation is disabled
+│   │       → Verify plugin declaration in root build file and dynatrace {} block exists
+│   │       → See setup.md Phase 1 for detection commands
+│   │
+│   └─ 7. Logs look healthy but portal shows nothing?
+│           → Wait 1–2 minutes; portal has ingestion delay
+│           → Confirm device has network access and can reach the beacon URL
+│           → Check "Events per minute" limit (default 1,000/min)
+│
+├─ SPECIFIC DATA IS MISSING (some data appears, but not all)?
+│   │
+│   ├─ Web requests missing → see "Why are some web requests missing?" below
+│   ├─ User actions missing → see "Why are user actions missing?" below
+│   ├─ Crash events missing → see "Why are crash/ANR events missing?" below
+│   ├─ Custom events / properties missing → see "Why are custom events or properties missing?" below
+│   └─ Session Replay not recording → see "Session Replay" below
+│
+└─ BUILD ERROR → see "Build Error Reference" section
+```
+
+---
+
+## Troubleshooting
+
+### General checklist
+
+Before investigating a specific symptom, verify:
+
+1. **Technology is supported** — check the Supported Versions table in `setup.md`. ANR and native-crash reporting require Android 11+.
+2. **Plugin version is current** — ensure you are on a supported `8.x` release (check Maven Central for the latest patch).
+3. **Debug logging is enabled** — add `debug { agentLogging(true) }` to the `dynatrace {}` block, reproduce the issue, then review Logcat filtered by tag `dtx|caa`. Remove the flag before any production build.
+4. **Credentials are correct** — verify `applicationId` and `beaconUrl` match the values in Dynatrace → Mobile → (your app) → Settings → Instrumentation. The Beacon URL must use `https://`.
+5. **Network Security Configuration** includes system CA certificates and does not block the Dynatrace endpoint.
+6. **Dynatrace endpoint is reachable** from the test device's network.
+7. **No other monitoring plugin is interfering** — see Compatibility with other monitoring tools above.
+
+---
+
+### Why are some web requests missing?
+
+1. **Unsupported HTTP library** — only `HttpURLConnection` and `OkHttp` (v3/4/5) are auto-instrumented.
+   → For other libraries use `HttpRequestEventData` (modern) or `WebRequestTiming` (legacy) — see `sdk-apis.md`.
+2. **Firebase plugin conflict** — the Firebase Performance Gradle plugin can interfere with OkHttp instrumentation.
+   → Verify by temporarily removing Firebase Performance, then retest.
+3. **Request made outside an active session** — requests are only captured when OneAgent is running and data collection level is `USER_BEHAVIOR`.
+4. **Auto web request monitoring disabled** — check for `webRequests { enabled(false) }` in the DSL.
+
+---
+
+### Why are user actions missing?
+
+1. **Auto-instrumentation disabled** — check for `enabled(false)` at the configuration level or `userActions { enabled(false) }`.
+2. **Unsupported UI component** — WebView content, custom listeners, and some third-party components are not auto-captured.
+3. **Jetpack Compose interactive preview** — the sandbox has no network; instrumentation is skipped by design. Test on a device or emulator.
+4. **Compose version out of range** — Compose auto-instrumentation requires plugin 8.271+ and Compose 1.4–1.10. Check the Technologies tab in the wizard.
+5. **namePrivacy is on** — `namePrivacy(true)` masks action names; actions still appear but with generic names.
+
+---
+
+### Why are web requests not associated with a user action?
+
+OneAgent attaches web requests to a user action within a window from when the action opens until **500 ms after** it closes. Requests outside this window appear as standalone events.
+
+→ To extend the window, configure `userActions.timeout` in the `dynatrace {}` block.
+→ For manually-created actions, ensure the HTTP call is made before `leaveAction()`.
+
+---
+
+### Why are crash / ANR / native crash events missing?
+
+| Symptom | Check |
+| --- | --- |
+| No crash events at all | Is `crashReporting(false)` set? Is `pluginEnabled(false)` set? |
+| Crash event missing from portal | Was app restarted within 10 minutes of the crash? Dynatrace discards reports older than 10 min |
+| ANR events missing | Android version < 11? ANR reporting requires Android 11+ |
+| Native crash missing | Android version < 11? NDK crash reporting requires Android 11+ |
+| Crash appeared once, not again | Check for duplicate crash reporters (Firebase Crashlytics etc.) intercepting uncaught exceptions |
+
+---
+
+### Why are custom events or properties missing?
+
+1. **Property not defined in Dynatrace UI** — `event_properties.*` and `session_properties.*` keys must be configured in Dynatrace → Experience Vitals → Settings → Event and session properties **before** data is sent. Properties without UI definition are silently dropped.
+2. **Missing prefix** — Keys without `event_properties.` or `session_properties.` prefix are dropped.
+3. **Business event not in active session** — `sendBizEvent` requires OneAgent to be running with `USER_BEHAVIOR` data collection.
+4. **Action already finished** — `reportValue` / `reportError` on a finished `DTXAction` is silently ignored. Check `action.isFinished()` first.
+
+---
+
+### Session Replay not recording
+
+1. `sessionReplay.enabled(true)` must be set in the DSL.
+2. A Session Replay license is required in the Dynatrace environment.
+3. Privacy consent: if `userOptIn(true)` is set, the user must have consented with `USER_BEHAVIOR` level.
+4. Session Replay requires plugin 8.281+.
+5. Session Replay does not work in Jetpack Compose interactive preview.
 
 ---
 
@@ -110,47 +257,6 @@ Before investigating a specific symptom, verify:
 
 ---
 
-### Why is OneAgent not sending monitoring data?
-
-- `applicationId` and `beaconUrl` are correct (copy from Dynatrace → Mobile → Settings → Instrumentation)
-- Beacon URL uses `https://`
-- `userOptIn` is `false`, or `Dynatrace.applyUserPrivacyOptions()` has been called with `USER_BEHAVIOR` after user consent
-- `pluginEnabled` is not set to `false`
-- `autoStart { enabled(false) }` is not set unless calling `Dynatrace.startup()` manually
-
-For hybrid apps: `Dynatrace.instrumentWebView(webView)` is called **before** `webView.loadUrl(...)`, `hybridMonitoring(true)` is set, and `withMonitoredDomains(...)` includes the loaded domains.
-
----
-
-### Why are some web requests missing?
-
-- **Unsupported HTTP library** — only `HttpURLConnection` and `OkHttp` (v3/4/5) are auto-instrumented; use manual `HttpRequestEventData` or `WebRequestTiming` for others
-- **Firebase plugin conflict** — the Firebase Gradle plugin can interfere with OkHttp instrumentation; verify by temporarily removing Firebase
-- **Request made outside an active session** — requests are only captured when OneAgent is running
-
----
-
-### Why are web requests not associated with a user action?
-
-OneAgent attaches web requests to a user action only within a window from when the action opens until **500 ms after** the action closes. Requests outside this window are captured as standalone events.
-
-To extend the window, configure `userActions.timeout` in the `dynatrace {}` block.
-
----
-
-### Why does my UI component not generate a user action?
-
-- **WebView component** — UI inside a WebView is not auto-captured; use hybrid monitoring
-- **Unsupported listener type** — only standard Android listeners are instrumented; custom or library-specific event handling may not be captured
-- **Unsupported Jetpack Compose component** — not all composables are instrumented; check the supported component list in Dynatrace documentation
-
----
-
-### Why does Dynatrace not monitor Jetpack Compose in Android Studio's interactive preview?
-
-The **interactive preview mode** runs in a sandbox with no network access. Bytecode instrumentation is skipped and OneAgent is never started. This is expected behaviour — run on a real device or emulator to verify instrumentation.
-
----
 
 ## Build Error Reference
 

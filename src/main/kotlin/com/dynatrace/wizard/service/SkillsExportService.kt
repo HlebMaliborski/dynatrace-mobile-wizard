@@ -344,8 +344,8 @@ $manualStartupSection
 | File | Name | Use when… |
 | --- | --- | --- |
 | [`setup.md`](setup.md) | **Plugin Setup & Configuration** | Adding the Gradle plugin, `dynatrace {}` DSL reference, multi-module patterns, manual startup, standalone instrumentation |
-| [`sdk-apis.md`](sdk-apis.md) | **OneAgent SDK APIs** | `enterAction`, `leaveAction`, `reportValue`, `sendBizEvent`, `WebRequestTiming`, hybrid WebView monitoring, `setBeaconHeaders`, `DataCollectionLevel`, `endVisit` |
-| [`monitoring.md`](monitoring.md) | **Monitoring Features** | App start measurement, web requests, W3C Trace Context, OkHttp modifier, crash/ANR/native crash reporting, custom events, user tagging, session properties |
+| [`sdk-apis.md`](sdk-apis.md) | **OneAgent SDK APIs** | Any question about sending events, reporting values, tracking errors, or manual web requests — covers **both Modern (New RUM/Grail) and Legacy (Classic) APIs** side-by-side: `sendEvent`/`EventData`, `sendExceptionEvent`, `sendBizEvent`, `enterAction`/`leaveAction`/`DTXAction`, `reportEvent`/`reportValue`/`reportError`, `HttpRequestEventData`, `WebRequestTiming`/`getRequestTag`, hybrid WebView monitoring, `setBeaconHeaders`, `DataCollectionLevel` |
+| [`monitoring.md`](monitoring.md) | **Monitoring Features** | App start measurement, web requests (auto-instrumentation, W3C Trace Context, `OkHttpEventModifier`), crash/ANR/native crash, `sendExceptionEvent`, `sendEvent`/`EventData`, `EventModifier`, `identifyUser`, session properties — includes **legacy cross-references** for `reportError`, `reportEvent`, `reportValue`, and `WebRequestTiming` |
 | [`troubleshooting.md`](troubleshooting.md) | **Troubleshooting & Limitations** | Build errors, missing data, missing user actions or web requests, plugin compatibility issues, instrumentation limitations |
 
 ---

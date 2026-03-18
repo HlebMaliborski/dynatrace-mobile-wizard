@@ -23,14 +23,123 @@ disable-model-invocation: true
 
 - User asks about app start measurement, cold/warm/hot starts, or `Dynatrace.startView`
 - User asks about web request monitoring, `HttpRequestEventData`, `OkHttpEventModifier`, or W3C Trace Context
+- User asks about **legacy** web request APIs: `WebRequestTiming`, `getRequestTag`, or manual header injection
 - User asks about crash reporting, ANR reporting, or native crash reporting
 - User asks about `ExceptionEventData`, `sendExceptionEvent`, or manual error reporting
+- User asks about **legacy** error reporting: `reportError` attached to an action or standalone
 - User asks about `EventData`, `EventModifier`, custom events, or event/session properties
+- User asks about **legacy** event/value APIs: `reportEvent`, `reportValue`, or action-attached values
 - User asks about `identifyUser`, `SessionPropertyEventData`, or user tagging
 - User asks about `sendEvent`, `addEventModifier`, or enriching events with custom properties
 - User asks about Session Replay, rage tap detection, or lifecycle monitoring
 - User asks about the New RUM Experience or `startupWithGrailEnabled`
 - User asks about `OkHttpEventModifier`, `HttpRequestEventData`, or `sendHttpRequestEvent`
+- User asks **"is Dynatrace working?"**, **"how do I verify monitoring?"**, or **"why don't I see data?"** — load this file and `troubleshooting.md`
+- User asks which libraries or UI components are auto-instrumented
+
+---
+
+## When to Ask for Clarification
+
+| Unknown | Question to ask |
+| --- | --- |
+| Old vs new API preference | "Are you writing new code (use Modern/Grail APIs) or working with existing code (may need Legacy APIs)?" |
+| Monitoring data missing but setup looks correct | "Are you testing on a device with Android 11+ for ANR/crash events? Is the app connected to the internet?" |
+| Properties not appearing | "Have you defined the property keys in Dynatrace UI under Experience Vitals → Settings → Event and session properties?" |
+
+---
+
+## What Is Auto-Instrumented (No Code Changes Needed)
+
+When the Dynatrace Gradle plugin is applied and auto-instrumentation is enabled, the following are captured **automatically**:
+
+| Category | What is captured | Notes |
+| --- | --- | --- |
+| **HTTP requests** | `HttpURLConnection`, `OkHttp` v3/4/5, `Retrofit 2` | Response code, URL, method, duration, errors |
+| **App lifecycle** | Cold start, warm start, hot start, `onResume`, `onPause` | Duration from process creation to first rendered frame |
+| **Activities** | Every `Activity.onResume` → view tracking | Activity class name used as view name |
+| **Crashes** | Uncaught Java/Kotlin exceptions | Full stack trace; sent on next app launch |
+| **ANR** | Application Not Responding events | Android 11+ only; app must restart within 10 min |
+| **Native crashes** | NDK C/C++ crashes | Android 11+ only; app must restart within 10 min |
+| **Jetpack Compose** | `clickable`, `combinedClickable`, `toggleable`, `selectable`, `swipeable`, `draggable`, `slider`, `pager`, `pull-refresh` | Plugin 8.271+; Compose 1.4–1.10 |
+| **Coroutines** | Coroutine lifecycle and suspension points | Kotlin Coroutines on supported Kotlin versions |
+| **Jetpack Navigation** | Fragment and composable destination changes | Navigation Component |
+| **User gestures** | Taps, swipes on standard Android Views | Custom or third-party view handlers may not be captured |
+
+**Not auto-instrumented** (require manual SDK calls or hybrid monitoring):
+- Custom HTTP libraries (Ktor, Volley via non-OkHttp stack, etc.)
+- WebView JavaScript — use `hybridMonitoring(true)` + `instrumentWebView()`
+- React Native / Flutter — hybrid monitoring required
+- Background services and WorkManager tasks
+- NDK / native-layer code
+
+---
+
+## Verify Monitoring is Working
+
+Use this checklist after setup to confirm OneAgent is active before checking the Dynatrace portal.
+
+### Step 1 — Enable debug logging temporarily
+
+```kotlin
+// In your dynatrace {} block — REMOVE before production build
+debug {
+    agentLogging(true)
+}
+```
+
+### Step 2 — Run the app and filter Logcat
+
+```bash
+# Android Studio Logcat filter, or adb:
+adb logcat -s "dtx" "caa" "*:S"
+```
+
+**Expected log lines on successful startup:**
+
+```
+dtx  : OneAgent started successfully
+dtx  : Application ID: <your-app-id>
+dtx  : Beacon URL: https://<your-tenant>.live.dynatrace.com/mbeacon
+dtx  : Data collection level: USER_BEHAVIOR
+```
+
+**Warning signs in logs:**
+
+| Log message | Meaning | Fix |
+| --- | --- | --- |
+| `OneAgent disabled — pluginEnabled is false` | Kill-switch is on | Remove `pluginEnabled(false)` from DSL |
+| `Data collection level: OFF` | opt-in mode, user hasn't consented | Call `applyUserPrivacyOptions` with `USER_BEHAVIOR` |
+| `HTTP 403 sending beacon` | Invalid credentials or auth header rejected | Verify `applicationId` and `beaconUrl`; check `CommunicationProblemListener` |
+| `HTTP 404 sending beacon` | Wrong Beacon URL | Copy URL from Dynatrace → Mobile → Settings → Instrumentation |
+| `No network — data queued` | Device offline | Test on a network-connected device |
+| `Certificate error` | Cluster uses private CA | Add CA cert to `network_security_config.xml` |
+
+### Step 3 — Trigger a monitored event
+
+```kotlin
+// Create a simple test action and verify it in Dynatrace
+val action = Dynatrace.enterAction("Test action — delete me")
+action.reportValue("test_key", "test_value")
+action.leaveAction()
+```
+
+Or with the modern API:
+
+```kotlin
+Dynatrace.sendEvent(
+    EventData().addEventProperty("event_properties.test_key", "verify_setup")
+)
+```
+
+### Step 4 — Check the Dynatrace portal
+
+1. Dynatrace → **Mobile** → select your app
+2. Under **Sessions**, look for the device/session from your test run (may take 1–2 minutes)
+3. Under **User actions**, find your test action or event
+
+If sessions appear but no data: check `Data collection level` in logs.
+If nothing appears after 5 minutes: go to `troubleshooting.md`.
 
 ---
 
@@ -161,7 +270,9 @@ Dynatrace.sendHttpRequestEvent(requestData);
 
 ### Manual Web Request Reporting
 
-For networking libraries not supported by automatic instrumentation:
+For networking libraries not supported by automatic instrumentation.
+
+#### ✅ Modern approach (New RUM / Grail) — preferred for new code
 
 ```kotlin
 // Kotlin
@@ -185,6 +296,33 @@ HttpRequestEventData requestData = new HttpRequestEventData("https://api.example
     .withStatusCode(200);
 Dynatrace.sendHttpRequestEvent(requestData);
 ```
+
+#### ⚠️ Legacy approach (Classic RUM) — WebRequestTiming + getRequestTag
+
+```kotlin
+// Kotlin — attach a web request to a user action
+val url = URL("https://api.example.com/data")
+val action = Dynatrace.enterAction("Fetch data")
+val tag = action.getRequestTag()
+val timing = Dynatrace.getWebRequestTiming(tag)
+
+val request = Request.Builder()
+    .url(url)
+    .addHeader(Dynatrace.getRequestTagHeader(), tag)
+    .build()
+
+timing.startWebRequestTiming()
+try {
+    val response = client.newCall(request).execute()
+    timing.stopWebRequestTiming(url, response.code, response.message)
+} catch (e: IOException) {
+    timing.stopWebRequestTiming(url, -1, e.toString())
+} finally {
+    action.leaveAction()
+}
+```
+
+> **When to use each:** Use `sendHttpRequestEvent(HttpRequestEventData)` for new code — it requires no open action and works cleanly with W3C Trace Context. Use `WebRequestTiming` + `getRequestTag` only for existing Classic RUM instrumentation or non-HTTP protocols where you need the request to appear inside an action waterfall.
 
 ### Add Custom Properties to Web Requests
 
@@ -357,7 +495,7 @@ new DynatraceConfigurationBuilder("<id>", "<url>").withNativeCrashReporting(fals
 
 ### Manual Error Reporting
 
-Report handled exceptions:
+#### ✅ Modern approach (New RUM / Grail) — preferred for new code
 
 ```kotlin
 // Kotlin
@@ -383,6 +521,27 @@ try {
 }
 ```
 
+#### ⚠️ Legacy approach (Classic RUM) — action-attached or standalone error codes
+
+```kotlin
+// Kotlin — attached to an open action
+action.reportError("network_error", -1)          // error name + code
+action.reportError("parse_failed", exception)    // error name + exception
+
+// Standalone (not tied to an action)
+Dynatrace.reportError("background_sync_failed", -2)
+Dynatrace.reportError("unhandled_state", exception)
+```
+
+```java
+// Java
+action.reportError("network_error", -1);
+action.reportError("parse_failed", exception);
+Dynatrace.reportError("background_sync_failed", -2);
+```
+
+> **When to use each:** Prefer `sendExceptionEvent(ExceptionEventData)` for new code — it creates a standalone error event in Grail with full stack trace and custom properties. Use `reportError` only for existing Classic RUM instrumentation or when you need the error to appear in the action waterfall.
+
 ---
 
 ## Custom Events
@@ -398,6 +557,8 @@ Before sending custom properties, define them in the Dynatrace UI:
 > Properties **not configured** in the UI are dropped during ingest.
 
 ### Send Custom Events
+
+#### ✅ Modern approach (New RUM / Grail) — preferred for new code
 
 ```kotlin
 // Kotlin
@@ -419,6 +580,31 @@ Dynatrace.sendEvent(
         .addEventProperty("event_properties.cart_value", 149.99)
 );
 ```
+
+#### ⚠️ Legacy approach (Classic RUM) — action-attached events
+
+In the classic model, events and values are attached to an open `DTXAction`:
+
+```kotlin
+// Kotlin
+val action = Dynatrace.enterAction("Checkout")
+action.reportEvent("payment_confirmed")          // named event
+action.reportValue("cart_value", 149.99)         // numeric value
+action.reportValue("checkout_step", "confirmed") // string value
+action.leaveAction()
+```
+
+```java
+// Java
+DTXAction action = Dynatrace.enterAction("Checkout");
+action.reportEvent("payment_confirmed");
+action.reportValue("cart_value", 149.99);
+action.leaveAction();
+```
+
+> **When to use each:**
+> - Use `sendEvent(EventData())` when you want a standalone event not tied to a user action, or when working with New RUM / Grail.
+> - Use `reportEvent` / `reportValue` on a `DTXAction` when you want the value to appear in the Classic waterfall view, or when extending existing legacy instrumentation.
 
 ### Event Modifiers
 

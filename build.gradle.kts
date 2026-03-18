@@ -28,6 +28,15 @@ intellij {
 }
 
 tasks {
+    processResources {
+        // docs/skills/ is the single source of truth for the bundled skill Markdown files.
+        // Copying them here avoids a duplicate copy in src/main/resources/skills/ that
+        // could silently drift out of sync with the docs.
+        from("docs/skills") {
+            into("skills")
+        }
+    }
+
     patchPluginXml {
         sinceBuild = providers.gradleProperty("pluginSinceBuild").get()
         untilBuild.set("")  // ← Add this line to remove upper bound

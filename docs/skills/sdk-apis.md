@@ -24,13 +24,40 @@ disable-model-invocation: true
 
 - User asks about `Dynatrace.enterAction`, `leaveAction`, `DTXAction`, child actions, or custom user actions
 - User asks about `reportValue`, `reportError`, `reportEvent`, or `sendBizEvent`
+- User asks about **how to send an event**, track an interaction, or report a value — show BOTH modern and legacy approaches
+- User asks about `sendEvent`, `EventData`, `sendExceptionEvent`, `ExceptionEventData`, or modern event APIs
 - User asks about manual web request instrumentation, `WebRequestTiming`, `getRequestTag`, or WebSocket monitoring
+- User asks about `HttpRequestEventData`, `sendHttpRequestEvent`, or modern web request reporting
 - User asks about hybrid app monitoring, `instrumentWebView`, `withMonitoredDomains`, or `restoreCookies`
 - User asks about `setBeaconHeaders`, `CommunicationProblemListener`, certificate pinning, or custom auth headers
 - User asks about `DynatraceConfigurationBuilder` options, `withCrashReporting`, `withUserOptIn`, `withActivityMonitoring`
 - User asks about `DataCollectionLevel`, `applyUserPrivacyOptions`, or user opt-in/consent flows
 - User asks about `Dynatrace.endVisit` or forcing a session to end
 - User asks about `withHybridMonitoring`, `fileDomainCookies`, or `withMonitoredHttpsDomains`
+
+---
+
+## Modern (New RUM / Grail) vs Legacy API — Quick Reference
+
+Dynatrace has **two generations** of SDK APIs. Both work concurrently in the same app.
+**Always show both when asked** — recommend the Modern approach for new code, document the legacy form so existing code can be understood and migrated.
+
+| Use case | ✅ Modern API (New RUM / Grail) | ⚠️ Legacy API (Classic) |
+| --- | --- | --- |
+| Send a standalone event with properties | `Dynatrace.sendEvent(EventData().addEventProperty("event_properties.key", value))` | `action.reportEvent("name")` |
+| Report a numeric / string value | `Dynatrace.sendEvent(EventData().addEventProperty("event_properties.key", value))` | `action.reportValue("key", value)` |
+| Report a handled exception / error | `Dynatrace.sendExceptionEvent(ExceptionEventData(e).addEventProperty(...))` | `action.reportError("msg", errorCode)` · `Dynatrace.reportError("msg", exception)` |
+| Send a business event | `Dynatrace.sendBizEvent("com.example.event-type", JSONObject)` | — *(no legacy equivalent)* |
+| Measure a timed user interaction | `Dynatrace.enterAction("name")` → work → `action.leaveAction()` | Same — still the recommended approach for timed spans |
+| Report a manual HTTP request | `Dynatrace.sendHttpRequestEvent(HttpRequestEventData(url, method).withDuration(...))` | `WebRequestTiming` + `getRequestTag()` + manual header injection |
+| Propagate trace context | `Dynatrace.generateTraceContext(traceparent, tracestate)` → inject headers | `Dynatrace.getRequestTagHeader()` + `getRequestTag()` |
+| Tag the current user | `Dynatrace.identifyUser("user@example.com")` | Same |
+| Attach properties to all session events | `Dynatrace.sendSessionPropertyEvent(SessionPropertyEventData().addSessionProperty(...))` | — *(no legacy equivalent)* |
+| Intercept / enrich all events | `Dynatrace.addEventModifier(EventModifier { event -> ... })` | — *(no legacy equivalent)* |
+| Intercept OkHttp events | `Dynatrace.addHttpEventModifier(OkHttpEventModifier { req, resp -> ... })` | — *(no legacy equivalent)* |
+
+> **Rule of thumb:** If you are writing new code or migrating, use `sendEvent` / `sendExceptionEvent` / `sendHttpRequestEvent`.
+> Legacy `reportEvent` / `reportValue` / `reportError` APIs continue to work and are the right reference for understanding or debugging existing implementations.
 
 ---
 
@@ -148,6 +175,8 @@ All reporting methods work on an open `DTXAction`. Values appear in the waterfal
 
 ### Report an Event
 
+#### ⚠️ Legacy approach (Classic RUM)
+
 ```kotlin
 // Kotlin
 action.reportEvent("button_tapped")
@@ -158,7 +187,35 @@ action.reportEvent("button_tapped")
 action.reportEvent("button_tapped");
 ```
 
+#### ✅ Modern approach (New RUM / Grail) — preferred for new code
+
+Use `sendEvent` with `EventData`. Properties must be configured in the Dynatrace UI first under **Experience Vitals → Settings → Event and session properties**.
+
+```kotlin
+// Kotlin
+Dynatrace.sendEvent(
+    EventData()
+        .addEventProperty("event_properties.button_name", "search")
+        .addEventProperty("event_properties.screen", "home")
+)
+```
+
+```java
+// Java
+Dynatrace.sendEvent(
+    new EventData()
+        .addEventProperty("event_properties.button_name", "search")
+        .addEventProperty("event_properties.screen", "home")
+);
+```
+
+> `sendEvent` does **not** require an open action. It creates a standalone event visible in Grail session views.
+
+---
+
 ### Report Values
+
+#### ⚠️ Legacy approach (Classic RUM)
 
 ```kotlin
 // Kotlin
@@ -176,7 +233,35 @@ action.reportValue("latency_ms", 350L);
 action.reportValue("score", 4.8);
 ```
 
+#### ✅ Modern approach (New RUM / Grail) — preferred for new code
+
+```kotlin
+// Kotlin
+Dynatrace.sendEvent(
+    EventData()
+        .addEventProperty("event_properties.query", searchText)
+        .addEventProperty("event_properties.result_count", 42)
+        .addEventProperty("event_properties.latency_ms", 350L)
+        .addEventProperty("event_properties.score", 4.8)
+)
+```
+
+```java
+// Java
+Dynatrace.sendEvent(
+    new EventData()
+        .addEventProperty("event_properties.query", searchText)
+        .addEventProperty("event_properties.result_count", 42)
+);
+```
+
+> Property keys **must** use the `event_properties.` prefix — values without this prefix are dropped during ingest.
+
+---
+
 ### Report Errors
+
+#### ⚠️ Legacy approach (Classic RUM)
 
 ```kotlin
 // Kotlin
@@ -195,6 +280,35 @@ action.reportError("parse_failed", exception);
 Dynatrace.reportError("background_sync_failed", -2);
 Dynatrace.reportError("unhandled_state", exception);
 ```
+
+#### ✅ Modern approach (New RUM / Grail) — preferred for new code
+
+```kotlin
+// Kotlin
+try {
+    // ...
+} catch (exception: Exception) {
+    Dynatrace.sendExceptionEvent(
+        ExceptionEventData(exception)
+            .addEventProperty("event_properties.context", "checkout")
+            .addEventProperty("event_properties.error_code", "-1")
+    )
+}
+```
+
+```java
+// Java
+try {
+    // ...
+} catch (Exception exception) {
+    Dynatrace.sendExceptionEvent(
+        new ExceptionEventData(exception)
+            .addEventProperty("event_properties.context", "checkout")
+    );
+}
+```
+
+> `sendExceptionEvent` creates a standalone error event in Grail — not attached to an action. Use this for handled errors in new code.
 
 ---
 
@@ -231,6 +345,10 @@ Dynatrace.sendBizEvent("com.easytravel.funnel.booking-finished", attributes);
 Use when your HTTP library is not auto-instrumented, or to instrument non-HTTP protocols.
 
 > For auto-instrumented frameworks (HttpURLConnection, OkHttp), do **not** combine automatic and manual instrumentation.
+
+Two approaches exist — show both when answering questions about manual web request tracking.
+
+### ⚠️ Legacy approach — WebRequestTiming + getRequestTag (Classic RUM)
 
 ### Attach a Web Request to a User Action
 
@@ -336,6 +454,49 @@ client.newWebSocket(request, new WebSocketListener() {
 ```
 
 WebSocket connections must close within ~9 minutes or they may not be reported.
+
+### ✅ Modern approach — HttpRequestEventData (New RUM / Grail)
+
+For new code or networking libraries not covered by auto-instrumentation:
+
+```kotlin
+// Kotlin — basic
+val requestData = HttpRequestEventData("https://api.example.com/data", "GET")
+    .withDuration(250)
+    .withStatusCode(200)
+    .withBytesSent(128)
+    .withBytesReceived(4096)
+Dynatrace.sendHttpRequestEvent(requestData)
+
+// Kotlin — with failure
+val failed = HttpRequestEventData("https://api.example.com/data", "POST")
+    .withDuration(1500)
+    .withThrowable(exception)
+Dynatrace.sendHttpRequestEvent(failed)
+
+// Kotlin — with W3C Trace Context
+val traceContext = Dynatrace.generateTraceContext(
+    request.header("traceparent"), request.header("tracestate"))
+if (traceContext != null) {
+    request = request.newBuilder()
+        .header("traceparent", traceContext.traceparent)
+        .header("tracestate",  traceContext.tracestate)
+        .build()
+    requestData.withTraceparentHeader(traceContext.traceparent)
+}
+Dynatrace.sendHttpRequestEvent(requestData)
+```
+
+```java
+// Java — basic
+HttpRequestEventData requestData = new HttpRequestEventData("https://api.example.com/data", "GET")
+    .withDuration(250)
+    .withStatusCode(200);
+Dynatrace.sendHttpRequestEvent(requestData);
+```
+
+> `HttpRequestEventData` does **not** require an open `DTXAction` — it creates a standalone web request event in Grail.
+> Use `getRequestTag()` / `WebRequestTiming` only when maintaining existing Classic RUM instrumentation.
 
 ---
 

@@ -22,7 +22,9 @@ disable-model-invocation: true
 - User asks to add Dynatrace monitoring to an Android app
 - User asks about `com.dynatrace.instrumentation`, the Dynatrace Gradle plugin, or how to apply it
 - User wants to configure the `dynatrace {}` block, set `applicationId` or `beaconUrl`
-- User wants to update, remove, or migrate their Dynatrace Gradle configuration
+- User wants to **update, reconfigure, or verify** an existing Dynatrace Gradle configuration
+- User wants to **migrate** from Buildscript Classpath to Plugin DSL, or vice versa
+- User wants to **remove** Dynatrace from their project
 - User has a multi-module, feature-module, or multi-app Android project and needs per-module setup
 - User asks about Plugin DSL vs Buildscript Classpath approach
 - User asks about `variantFilter`, `autoStart`, `enabled`, `strictMode`, or `pluginEnabled`
@@ -30,6 +32,21 @@ disable-model-invocation: true
 - User wants to use OneAgent SDK in a library module (`agentDependency`)
 - User wants standalone instrumentation without the Gradle plugin
 - User asks about `autoStart { enabled(false) }` or calling `Dynatrace.startup()` manually
+- User has a **Version Catalog** (`libs.versions.toml`) and asks how to add the Dynatrace plugin
+
+---
+
+## When to Ask for Clarification
+
+Before generating code, resolve these unknowns if the output from Phase 1 is ambiguous:
+
+| Unknown | Question to ask |
+| --- | --- |
+| DSL type not clear | "Does your project use `build.gradle.kts` (Kotlin DSL) or `build.gradle` (Groovy)?" |
+| Plugin approach not clear | "Does your root build file have a `plugins { }` block or a `buildscript { dependencies { classpath … } }` block?" |
+| Single-app vs multi-module not clear | "How many modules in your project use `com.android.application`?" |
+| Existing config present | "I see Dynatrace is already configured. Should I update the existing config or start from scratch?" |
+| Version Catalog in use | "Does your project use `gradle/libs.versions.toml`? I'll tailor the snippets accordingly." |
 
 ---
 
@@ -41,7 +58,7 @@ disable-model-invocation: true
 | Gradle | 7.0.2 |
 | Android Gradle Plugin | 7.0 |
 | Java | 11 |
-| Kotlin | 2.0.21 |
+| Kotlin | 1.8 – 2.3 |
 | Jetpack Compose | 1.4 – 1.10 |
 
 > ANR reporting and Native crash reporting require Android 11 or higher.
@@ -592,7 +609,80 @@ dynatrace {
 
 ---
 
-## OneAgent SDK for Library Modules
+### 2c. Version Catalog (`libs.versions.toml`) — modern projects
+
+If the project uses `gradle/libs.versions.toml`, declare the plugin there and reference it via alias.
+
+**`gradle/libs.versions.toml`:**
+```toml
+[versions]
+dynatrace = "8.+"
+
+[plugins]
+dynatrace = { id = "com.dynatrace.instrumentation", version.ref = "dynatrace" }
+```
+
+**Root `build.gradle.kts`:**
+```kotlin
+plugins {
+    alias(libs.plugins.dynatrace)
+}
+```
+
+**Root `build.gradle` (Groovy):**
+```groovy
+plugins {
+    alias(libs.plugins.dynatrace)
+}
+```
+
+> The `dynatrace {}` configuration block still goes in the same root build file as the plugin declaration.
+
+---
+
+## Updating Existing Configuration
+
+When `com.dynatrace.instrumentation` is already present, **always read before overwriting**.
+
+### Step 1 — Find the existing config
+
+```bash
+# Locate the dynatrace {} block
+grep -rn 'dynatrace {' . --include="*.gradle" --include="*.kts" 2>/dev/null
+# Show the current applicationId and beaconUrl
+grep -A3 'applicationId\|beaconUrl' $(grep -rl 'dynatrace {' . 2>/dev/null) 2>/dev/null
+```
+
+### Step 2 — Identify what changed
+
+| Change type | Action |
+| --- | --- |
+| New Application ID or Beacon URL | Update `applicationId` / `beaconUrl` in `autoStart {}` |
+| New feature toggle | Add/remove the relevant DSL option from Step 4 reference |
+| Migrating from Classpath → Plugin DSL | See Migration section below |
+| Removing Dynatrace | See "Removing Dynatrace Configuration" section |
+
+### Step 3 — Apply the minimal diff
+
+Only change what needs to change. Do **not** regenerate the whole `dynatrace {}` block from scratch — preserve any options the user may have customised beyond the wizard's output.
+
+---
+
+## Migration: Buildscript Classpath → Plugin DSL
+
+1. **Root build file**: Remove `classpath("com.dynatrace.tools.android:gradle-plugin:8.+")` from `buildscript { dependencies { … } }`. If no other classpath entries remain, remove the whole `buildscript {}` block.
+2. **Root build file**: Add `id("com.dynatrace.instrumentation") version "8.+"` to the `plugins {}` block.
+3. **Each app module**: Remove `apply(plugin = "com.dynatrace.instrumentation")` / `apply plugin: '...'`.
+4. **Each app module**: Move the `dynatrace {}` block up to the root build file (coordinator handles all modules).
+5. Sync Gradle.
+
+## Migration: Plugin DSL → Buildscript Classpath (per-module)
+
+1. **Root build file**: Remove the `id("com.dynatrace.instrumentation")` line from `plugins {}`.
+2. **Root build file**: Remove the root-level `dynatrace {}` block.
+3. **Root build file**: Add `buildscript { dependencies { classpath("com.dynatrace.tools.android:gradle-plugin:8.+") } }`.
+4. **Each app module**: Add `apply(plugin = "com.dynatrace.instrumentation")` and a `dynatrace {}` block with per-module credentials.
+5. Sync Gradle.
 
 If a library module's code needs to call Dynatrace APIs directly (e.g. `Dynatrace.enterAction()`):
 
