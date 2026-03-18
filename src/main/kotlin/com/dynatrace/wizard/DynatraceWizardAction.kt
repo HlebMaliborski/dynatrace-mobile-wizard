@@ -63,7 +63,7 @@ class DynatraceWizardAction : AnAction(), DumbAware {
             }
         }
 
-        DynatraceWizardDialog(project, existingConfig).show()
+        DynatraceWizardDialog(project, existingConfig, projectInfo).show()
     }
 
     override fun update(e: AnActionEvent) {

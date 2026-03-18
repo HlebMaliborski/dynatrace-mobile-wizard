@@ -35,10 +35,16 @@ import javax.swing.ScrollPaneConstants
 class DynatraceWizardDialog(
     private val project: Project,
     /** Non-null when the user chose "Update Setup" for an already-configured project. */
-    existingConfig: DynatraceConfig? = null
+    existingConfig: DynatraceConfig? = null,
+    /**
+     * When the caller (e.g. [com.dynatrace.wizard.DynatraceWizardAction]) has already run
+     * project detection, pass the result here to avoid a redundant scan when
+     * [WelcomeStep.createPanel] is called during dialog initialisation.
+     */
+    preDetectedInfo: ProjectDetectionService.ProjectInfo? = null
 ) : DialogWrapper(project) {
 
-    private val welcomeStep         = WelcomeStep(project)
+    private val welcomeStep         = WelcomeStep(project, preDetectedInfo)
     private val environmentStep     = EnvironmentConfigStep()
     private val moduleSelectionStep = ModuleSelectionStep()
     private val supportedTechStep   = SupportedTechnologiesStep()

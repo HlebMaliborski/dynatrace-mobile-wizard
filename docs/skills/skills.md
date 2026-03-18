@@ -44,7 +44,7 @@ that matches the user's question for detailed snippets and guidance.
 | Gradle | 7.0.2 |
 | Android Gradle Plugin | 7.0 |
 | Java | 11 |
-| Kotlin | 2.0.21 |
+| Kotlin | 1.8 – 2.3 |
 | Jetpack Compose | 1.4 – 1.10 |
 
 > ANR reporting and Native crash reporting require Android 11 or higher.

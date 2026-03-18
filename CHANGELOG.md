@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+- **Kotlin supported version range corrected to `1.8 – 2.3`** — both `docs/skills/skills.md` and the generated `skills.md` (via `SkillsExportService`) previously hardcoded `2.0.21` as the minimum Kotlin version, inconsistent with the Technologies tab catalog (`minVersion = "1.8.0"`). Both sources now show `1.8 – 2.3`.
+- **Eliminated redundant `detectProject()` call on wizard open** — `DynatraceWizardAction` already ran project detection before opening the dialog; the computed `ProjectInfo` is now forwarded into `DynatraceWizardDialog` → `WelcomeStep`, skipping the second identical filesystem scan entirely.
+- **Welcome tab: "What happens next" paragraph anchored under a section header** — the paragraph previously floated between Setup Flow and Documentation with no visual heading; it is now under a `TitledSeparator("What This Wizard Does")`.
+
 ### Fixed
 - **`anrReporting` and `nativeCrashReporting` not restored on "Update Setup"** — `readExistingConfigFromString` was missing both fields; opening the wizard on a project that had these disabled would silently reset them to `true` and re-enable them on Finish.
 - **Summary tab ANR/native-crash note was backwards** — `"(Android 11+ only)"` appeared next to the *Disabled* state instead of *Enabled*; it is now shown as `"Enabled (Android 11+ only)"`.

@@ -19,14 +19,22 @@ import javax.swing.JPanel
 
 /**
  * Step 1 of the wizard: Welcome screen and Android project detection.
+ *
+ * @param preDetectedInfo When non-null, this [ProjectInfo] is used directly and
+ *   [ProjectDetectionService.detectProject] is not called again — avoids a
+ *   redundant file-system scan when the caller (e.g. [DynatraceWizardAction])
+ *   has already run detection.
  */
-class WelcomeStep(private val project: Project) {
+class WelcomeStep(
+    private val project: Project,
+    private val preDetectedInfo: ProjectDetectionService.ProjectInfo? = null
+) {
 
     private val detectionService = ProjectDetectionService(project)
     private lateinit var projectInfo: ProjectDetectionService.ProjectInfo
 
     fun createPanel(): JComponent {
-        projectInfo = detectionService.detectProject()
+        projectInfo = preDetectedInfo ?: detectionService.detectProject()
         val isAndroid = projectInfo.isAndroidProject
 
         val builder = FormBuilder.createFormBuilder()
@@ -136,8 +144,9 @@ class WelcomeStep(private val project: Project) {
             )
         }
 
-        // ── What happens next ─────────────────────────────────────────────────
+        // ── What this wizard does ─────────────────────────────────────────────
         builder.addVerticalGap(8)
+        builder.addComponent(TitledSeparator("What This Wizard Does"))
         builder.addComponent(
             JBLabel(
                 "<html>This wizard will modify your Gradle build files to add the " +
