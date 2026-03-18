@@ -748,6 +748,8 @@ class GradleModificationService(private val project: Project?) {
                         || hasFlag("userOptIn", true),
                 // Monitoring sections
                 crashReporting = !hasFlag("crashReporting", false),
+                anrReporting = !hasFlag("anrReporting", false),
+                nativeCrashReporting = !hasFlag("nativeCrashReporting", false),
                 hybridMonitoring = hasFlag("hybridMonitoring", true),
                 userActionsEnabled = !hasFlagInBlock(userActionsBlock, "enabled", false),
                 webRequestsEnabled = !hasFlagInBlock(webRequestsBlock, "enabled", false),

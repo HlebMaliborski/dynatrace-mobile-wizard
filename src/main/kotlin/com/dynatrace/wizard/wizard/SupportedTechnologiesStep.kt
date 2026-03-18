@@ -269,6 +269,9 @@ class SupportedTechnologiesStep {
             Regex("""distributionUrl[^\n]*?gradle-([\d.]+)-""").find(content)?.groupValues?.get(1)
 
         internal fun extractJavaVersion(content: String): String? {
+            // Legacy form: JavaVersion.VERSION_1_8  →  "8"
+            Regex("""JavaVersion\.VERSION_1_(\d+)""").find(content)?.groupValues?.get(1)?.let { return it }
+            // Modern form: JavaVersion.VERSION_11  →  "11"
             Regex("""JavaVersion\.VERSION_(\d+)""").find(content)?.groupValues?.get(1)?.let { return it }
             Regex("""jvmTarget\s*[=(]\s*["'](\d+)["']""").find(content)?.groupValues?.get(1)?.let { return it }
             Regex("""JavaLanguageVersion\.of\s*\(\s*(\d+)\s*\)""").find(content)?.groupValues?.get(1)?.let { return it }
@@ -428,8 +431,6 @@ class SupportedTechnologiesStep {
         builder.addComponent(TitledSeparator("Documentation"))
         builder.addComponent(DocumentationLinks.createLinkLabel(
             "Supported versions & limitations", DocumentationLinks.SUPPORT_LIMITATIONS))
-        builder.addComponent(DocumentationLinks.createLinkLabel(
-            "Build-specific limitations", DocumentationLinks.BUILD_SPECIFIC_LIMITATIONS))
         builder.addComponent(DocumentationLinks.createLinkLabel(
             "Compatibility with other monitoring tools", DocumentationLinks.COMPATIBILITY_MONITORING_TOOLS))
         builder.addVerticalGap(8)

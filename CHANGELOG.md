@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+- **`anrReporting` and `nativeCrashReporting` not restored on "Update Setup"** — `readExistingConfigFromString` was missing both fields; opening the wizard on a project that had these disabled would silently reset them to `true` and re-enable them on Finish.
+- **Summary tab ANR/native-crash note was backwards** — `"(Android 11+ only)"` appeared next to the *Disabled* state instead of *Enabled*; it is now shown as `"Enabled (Android 11+ only)"`.
+- **`JavaVersion.VERSION_1_8` misdetected as version "1"** — the Java detection regex now handles the legacy `VERSION_1_N` form (e.g. `VERSION_1_8` → `"8"`) before the modern `VERSION_N` form, preventing a false "Unsupported version" red on Java 8 projects.
+- **Duplicate "Build-specific limitations" link on Technologies tab** — the link appeared once contextually inside the competing-plugins warning block and again unconditionally in the Documentation section; the duplicate in the Documentation section has been removed.
+- **KDoc tab index in `DynatraceWizardDialog`** — the comment incorrectly skipped Tab 5 (Features), jumping straight from Tab 4 to Tab 6.
+
 ## [1.0.0] - 2026-03-18
 
 ### Added

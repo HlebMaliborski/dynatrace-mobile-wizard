@@ -29,8 +29,8 @@ import javax.swing.ScrollPaneConstants
  *  Tab 2  Environment     — Application ID + Beacon URL
  *  Tab 3  Technologies    — supported technologies
  *  Tab 4  Features        — feature toggles
- *  Tab 6  Skills          — AI skill export configuration
- *  Tab 7  Summary         — change preview + Finish
+ *  Tab 5  Skills          — AI skill export configuration
+ *  Tab 6  Summary         — change preview + Finish
  */
 class DynatraceWizardDialog(
     private val project: Project,
