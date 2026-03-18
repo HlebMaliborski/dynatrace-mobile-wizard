@@ -76,7 +76,7 @@ class DynatraceWizardDialog(
     init {
         title = if (existingConfig != null) "Configure Dynatrace Mobile SDK — Update"
                 else                        "Configure Dynatrace Mobile SDK"
-        setOKButtonText("Finish")
+        setOKButtonText("Apply Configuration")
         init()
         // Pre-populate fields when updating an existing config
         existingConfig?.let {
@@ -103,6 +103,10 @@ class DynatraceWizardDialog(
         }
         skillsStep.prefill(SkillsExportConfig())
         updateNavButtons()
+        // Tooltip is set here (after init()) because the JButton only exists once
+        // DialogWrapper has built the button panel.
+        getButton(okAction)?.toolTipText =
+            "Writes changes to your Gradle files — undoable with Ctrl+Z"
     }
 
     override fun createCenterPanel(): JComponent {

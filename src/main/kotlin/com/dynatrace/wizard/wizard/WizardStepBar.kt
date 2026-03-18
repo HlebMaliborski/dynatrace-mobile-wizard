@@ -1,6 +1,7 @@
 package com.dynatrace.wizard.wizard
 
 import com.dynatrace.wizard.util.WizardColors
+import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.BasicStroke
@@ -15,16 +16,18 @@ import java.awt.event.MouseEvent
 import javax.swing.JPanel
 
 /**
- * Compact horizontal step-progress indicator drawn above the wizard tab pane.
+ * Compact horizontal step-progress indicator drawn above the wizard card area.
  *
  * Layout (per step):
  *  ● — completed (filled green circle)
  *  ◉ — current   (filled accent circle, bold label)
  *  ○ — future    (grey outline, grey label)
  *
- * Circles are connected by a thin line that turns green as steps are completed.
- * Clicking a circle invokes [onStepClicked] so callers can drive tab navigation.
+ * The **entire cell column** is the click target, not just the circle.
+ * A subtle tinted background is painted over the hovered cell so the full
+ * hit area is visually communicated to the user.
  *
+ * Clicking a cell invokes [onStepClicked] so callers can drive navigation.
  * All sizes are HiDPI-aware via [JBUI.scale].
  */
 class WizardStepBar(val steps: List<String>) : JPanel() {
@@ -36,26 +39,47 @@ class WizardStepBar(val steps: List<String>) : JPanel() {
             repaint()
         }
 
+    /** Index of the step cell the pointer is currently over, or -1 when outside. */
+    private var hoveredStep: Int = -1
+
     /**
-     * Invoked when the user clicks a step circle.
-     * The caller is responsible for actually switching tabs (and running validation).
+     * Invoked when the user clicks a step cell.
+     * The caller is responsible for actually switching steps (and running validation).
      */
     var onStepClicked: ((Int) -> Unit)? = null
+
+    /**
+     * Subtle tinted background painted over a hovered cell to communicate that
+     * the full cell width — not just the circle — is the clickable area.
+     */
+    private val hoverBgColor: Color = JBColor(Color(0xE5EDF9), Color(0x404858))
 
     init {
         isOpaque = false
         border = JBUI.Borders.empty(8, 20, 6, 20)
+
         addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) {
                 val cb = onStepClicked ?: return
                 val i = stepIndexAt(e.x)
                 if (i in steps.indices) cb(i)
             }
-            override fun mouseEntered(e: MouseEvent) = updateCursor(e.x)
-            override fun mouseMoved(e: MouseEvent)   = updateCursor(e.x)
+            override fun mouseExited(e: MouseEvent) {
+                hoveredStep = -1
+                repaint()
+                cursor = java.awt.Cursor.getDefaultCursor()
+            }
         })
+
         addMouseMotionListener(object : MouseAdapter() {
-            override fun mouseMoved(e: MouseEvent)   = updateCursor(e.x)
+            override fun mouseMoved(e: MouseEvent) {
+                val newHovered = if (onStepClicked != null) stepIndexAt(e.x) else -1
+                if (newHovered != hoveredStep) {
+                    hoveredStep = newHovered
+                    repaint()
+                }
+                updateCursor(e.x)
+            }
         })
     }
 
@@ -79,9 +103,9 @@ class WizardStepBar(val steps: List<String>) : JPanel() {
             val stepW = drawW / n
             val offX  = ins.left
 
-            val r       = JBUI.scale(9)
-            val circleY = ins.top + r                      // circle centre Y
-            val labelY  = circleY + r + JBUI.scale(13)    // label baseline
+            val r       = JBUI.scale(10)                   // slightly larger for easier targeting
+            val circleY = ins.top + r
+            val labelY  = circleY + r + JBUI.scale(13)
 
             val accentCol: Color = WizardColors.accent
             val doneCol:   Color = WizardColors.success
@@ -92,6 +116,18 @@ class WizardStepBar(val steps: List<String>) : JPanel() {
             val smallFont = JBUI.Fonts.smallFont()
             val boldFont  = smallFont.deriveFont(Font.BOLD, smallFont.size2D)
             val numFont   = smallFont.deriveFont(Font.BOLD, JBUI.scaleFontSize(9f).toFloat())
+
+            // ── Hover cell background (drawn first, behind everything else) ───
+            if (hoveredStep >= 0 && onStepClicked != null) {
+                val pad = JBUI.scale(3)
+                val hx  = offX + stepW * hoveredStep + pad
+                val hy  = JBUI.scale(2)
+                val hw  = stepW - pad * 2
+                val hh  = height - JBUI.scale(4)
+                g2.color = hoverBgColor
+                g2.stroke = BasicStroke(0f)
+                g2.fillRoundRect(hx, hy, hw, hh, JBUI.scale(6), JBUI.scale(6))
+            }
 
             // ── Connecting lines ──────────────────────────────────────────────
             g2.stroke = BasicStroke(1.5f)
@@ -150,7 +186,7 @@ class WizardStepBar(val steps: List<String>) : JPanel() {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /** Returns the step index under pixel x, or -1 if outside the drawable area. */
+    /** Returns the step index for the cell containing pixel [x]. */
     private fun stepIndexAt(x: Int): Int {
         if (steps.isEmpty()) return -1
         val ins   = insets
@@ -167,4 +203,3 @@ class WizardStepBar(val steps: List<String>) : JPanel() {
             java.awt.Cursor.getDefaultCursor()
     }
 }
-
