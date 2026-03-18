@@ -2,37 +2,42 @@
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-03-18
 
 ### Added
-- **Skills tab** (new wizard step 6) — dedicated tab for exporting a reusable AI skill file
-- **AI skill export** — generates a Markdown `skills.md` capturing the full wizard context (project layout, credentials, selected features, module structure) for use by AI coding agents
-- **Multi-client support** — choose from Claude Code, Codex, Copilot, Cursor, OpenCode, or AmpCode as the target AI client; user-level and project-level install scopes with computed output paths
-- **Canonical skill reference** — `docs/skills/skills.md` ships with the plugin as a full how-to reference covering all setup flows, DSL snippets, and feature options; can be installed into any AI client without running the wizard
-- **Editable output path** — the Skills tab path field is now editable; the wizard auto-computes the default from the selected client and scope, but users can override it freely
-- **↺ Reset button** — resets a manually edited path back to the auto-computed default for the selected client and scope
-- **Path validation** — the wizard now validates the output path before Finish: rejects blank paths, directory-only paths (ending with `/`), and absolute paths that don't start with `~/`
+- **Skills tab** (wizard step 6) — dedicated tab for exporting reusable AI skill files; produces **5 Markdown files** (`skills.md`, `setup.md`, `sdk-apis.md`, `monitoring.md`, `troubleshooting.md`) written to the same directory
+- **Multi-client skill export** — choose from Claude Code, Codex, Copilot, Cursor, OpenCode, or AmpCode; user-level and project-level install scopes with auto-computed output paths
+- **Detected Skills section** — Skills tab now scans the target directory on open and on every path/client/scope change, showing which of the 5 files are already installed (full / partial / none), including the client name, scope, and directory; auto-checks the export checkbox when existing files are found
+- **Feature search** — live filter bar on the Features tab with a clear (✕) button; sections with no matching rows collapse automatically; supports alias keywords (e.g. `gdpr` → opt-in, `dtx` → debug)
+- **All-clear banner** on the Technologies tab — green success notice when all detected versions are in range and no competing plugins are found
+- **Kotlin "Likely compatible" state** — Kotlin versions in the 1.8–2.3 range show amber `⚠ Likely compatible` status with a soft-bound note; versions above 2.3 show the standard unsupported error
+- **Canonical skill reference** — `docs/skills/` ships four static sub-skill files (`setup.md`, `sdk-apis.md`, `monitoring.md`, `troubleshooting.md`) bundled as plugin resources and copied verbatim to the install directory
+- **↺ Reset button** on the Skills tab — resets a manually edited path back to the auto-computed default
+- **Path validation** on the Skills tab — rejects blank, directory-only, or absolute non-home paths before Finish
+- **Summary skills preview truncation** — skills preview in the Summary tab is capped at 35 lines with a `[N more lines]` note
 
 ### Changed
-- AI skill export moved from the Features tab to its own dedicated Skills tab
-- `DynatraceConfig` no longer carries AI skill fields (`exportSkillManifest`, `skillManifestPath`) — skill settings live in a separate `SkillsExportConfig` model
-- Replaced JSON `SKILL_MANIFEST.json` output with Markdown `skills.md` (richer, human-readable, directly usable by coding agents)
-- `SkillManifestService` renamed to `SkillsExportService` with a new Markdown-only generation API
+- **Technologies tab layout reworked** — switched from `GridLayout` (equal-height rows) to `GridBagLayout`; each row is now only as tall as its content, hint rows span all four columns, and a vertical filler keeps rows compact; column proportions adjusted (Technology 38 %, Detected 20 %, Supported 20 %, Status 22 %)
+- **Technologies tab legend** shortened and broken onto a single line; amber added as a distinct status color
+- **Kotlin supported range** narrowed to `1.8–2.3` (was `1.8–2.5`); versions above 2.3 are flagged as unsupported
+- **Skills export** refactored from a single monolithic `skills.md` to 5 files; `generateSkillsMarkdown()` now produces only the project-specific index, with static sub-skill files loaded from plugin resources
+- **`SkillsStep`** now accepts `Project` (constructor) and `ProjectInfo` (`createPanel`) for detection; `updateDetectionStatus()` shows client · scope · directory in every state
+- **`SkillsExportService`** gains `SkillDetectionResult` + `detectExistingSkills()` + `ALL_SKILL_FILES` constant
+- Skills tab install-locations label now shows only the selected client's two paths (not all clients)
+- Dialog size increased to 760 × 640
+- `SkillsStep.createPanel()` signature updated to accept optional `ProjectInfo`
+- Documentation links updated: `SUPPORT_LIMITATIONS`, `ERROR_CRASH_REPORTING`, `CRASH_REPORTING`, `PRIVACY_DATA_COLLECTION`, `WEB_REQUEST_MONITORING`, `CUSTOM_EVENTS`, `USER_SESSION_MANAGEMENT`, `MANUAL_SDK_INSTRUMENTATION`, `ADJUST_COMMUNICATION`, `DEBUG_LOGGING` all point to current Dynatrace docs paths
+- Removed `→` arrows from all link labels on the Technologies tab
+- Technologies tab column header renamed "In Your Project" → "Detected"
+
+### Fixed
+- **Single-library-module SDK re-run bug** — `hasAgentSdk()` now correctly detects `agentDependency()` blocks generated with `filterAll = true` (no `project.name` guard); the "Add OneAgent SDK dependency" checkbox was incorrectly appearing unchecked on every re-run
+- **Multi-app module checkboxes pre-fill** — on re-run only already-instrumented modules are pre-checked (was: all modules always checked); "Select all app modules" initial state now derived from actual checkbox states
+- **Per-module buildscript classpath injection for Plugin DSL projects** — `addClasspathGroovy/Kts` now emits a minimal `buildscript { dependencies { classpath ... } }` block (no `repositories {}`) when a `plugins {}` block is already present; the full block with `google()` / `mavenCentral()` is only emitted for legacy projects without a `plugins {}` block; `ensureBuildscriptRepositories` is no longer called for Plugin DSL projects
+- **React Native and Flutter `autoInstrumented` flag** corrected to `false`
+- **Navigation hint** in the Environment tab corrected ("Mobile → (your app) → Settings → Instrumentation")
+- Trim-on-blur applied to all four credential fields in the Environment tab
+- Summary tab skills preview correctly capped and labelled
 
 ### Removed
-- `docs/skills/SKILL_MANIFEST.schema.json` — superseded by the Markdown skill format
-
-## [1.0.0] - 2026-03-11
-
-### Added
-- Initial release of Dynatrace Mobile Wizard
-- **Welcome tab** — detects Android project, Gradle DSL (Kotlin/Groovy), module structure, setup flow, and existing Dynatrace configuration
-- **Modules tab** — per-module selection and approach configuration for multi-app projects (Plugin DSL coordinator vs per-module buildscript); library module SDK opt-in
-- **Environment tab** — Application ID and Beacon URL input with inline validation; per-module credentials for multi-app projects
-- **Technologies tab** — supported technology overview for the detected project dependencies
-- **Features tab** — toggles for auto-instrumentation, crash reporting, user actions, web request monitoring, Jetpack Compose, hybrid WebView monitoring, location, rage-tap detection, privacy settings (opt-in, name masking), build-variant targeting, class/method exclusions, and more
-- **Summary tab** — full Gradle code preview before applying; click Finish to write the changes
-- Groovy DSL (`build.gradle`) and Kotlin DSL (`build.gradle.kts`) support
-- Plugin DSL (`plugins {}`) and legacy buildscript classpath approach support
-- Mixed Plugin DSL + buildscript classpath detection and cleanup
-- All Gradle file writes use `WriteCommandAction` — fully undoable via Edit → Undo
-- Registered in Tools menu, editor right-click menu, and Project view right-click menu
+- Dead code: `buildSkillId()`, `buildCapabilities()`, `SkillCapability` enum
