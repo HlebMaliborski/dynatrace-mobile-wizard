@@ -2,7 +2,7 @@
 
 An **Android Studio / IntelliJ IDEA** plugin that
 simplifies [Dynatrace Mobile SDK](https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications/instrument-android-app/instrumentation-via-plugin)
-configuration for Android projects through a guided wizard dialog.
+configuration for Android projects through a guided, multi-step wizard dialog titled **"Configure Dynatrace Mobile SDK"**.
 
 ---
 
@@ -24,31 +24,24 @@ configuration for Android projects through a guided wizard dialog.
 
 ## Features
 
-- 🧙 **7-step wizard UI** — guided tab-based dialog built on IntelliJ's `DialogWrapper`
-- 🔍 **Auto project detection** — detects Android projects, locates `build.gradle(.kts)` files, and classifies every
-  module automatically
-- 🏗️ **Multi-module support** — handles single-app, feature-module, and multi-app projects with appropriate
-  instrumentation strategies per setup flow
-- 🔀 **Two plugin approaches** — Plugin DSL (`plugins {}` block) and buildscript classpath (
-  `buildscript { dependencies { classpath } }`) with seamless migration between them
-- 🔑 **Per-module credentials** — for multi-app projects using the per-module approach, each app module can have its own
-  Application ID and Beacon URL
-- 🔄 **Update / re-run mode** — when Dynatrace is already configured the wizard pre-fills all fields from the existing
-  setup, including per-module credentials
-- 🧩 **Legacy mixed Kotlin DSL support** — supports projects using both `plugins {}` and `buildscript { classpath }`,
-  and emits `apply(plugin = "com.dynatrace.instrumentation")` +
-  `configure<com.dynatrace.tools.android.dsl.DynatraceExtension> {}` when needed
-- 🔬 **Technology compatibility scan** — detects 20+ libraries and frameworks in the project and reports Dynatrace
-  compatibility against known version ranges
-- 🔍 **Feature search** — live filter bar on the Features tab lets you search toggles by keyword; non-matching sections collapse automatically
-- ✏️ **Gradle file modification** — adds the Dynatrace Gradle plugin and `dynatrace {}` configuration block with correct
-  placement and deduplication
-- 🧹 **Approach migration** — switches cleanly between Plugin DSL and per-module by removing stale coordinator
-  declarations, classpath entries, and orphaned `dynatrace {}` blocks
+- 🧙 **7-step wizard UI** — guided tab-based dialog; the **Modules tab is omitted** for single-app flows (only shown for multi-app or library-module projects)
+- 📊 **Step progress bar** — custom-painted horizontal indicator above the tab pane; numbered circles show completed / current / future state and are clickable for direct navigation
+- 🔒 **Forward-navigation guard** — clicking a tab header directly cannot bypass required fields; attempting to skip past an unfilled Environment or Modules tab redirects with an inline error
+- ⚡ **Finish always accessible** — the Finish button is visible on every tab so users can apply defaults and close at any point; validation still runs and redirects to the first invalid tab if needed
+- 🔍 **Auto project detection** — detects Android projects, locates `build.gradle(.kts)` files, and classifies every module automatically
+- 🏗️ **Multi-module support** — handles single-app, feature-module, and multi-app projects with appropriate instrumentation strategies per setup flow
+- 🔀 **Two plugin approaches** — Plugin DSL (`plugins {}` block) and buildscript classpath (`buildscript { dependencies { classpath } }`) with seamless migration between them
+- 🔑 **Per-module credentials** — for multi-app projects using the per-module approach, each app module can have its own Application ID and Beacon URL
+- 🔄 **Update / re-run mode** — when Dynatrace is already configured the wizard pre-fills all fields from the existing setup, including per-module credentials
+- 🧩 **Legacy mixed Kotlin DSL support** — supports projects using both `plugins {}` and `buildscript { classpath }`, and emits `apply(plugin = "com.dynatrace.instrumentation")` + `configure<com.dynatrace.tools.android.dsl.DynatraceExtension> {}` when needed
+- 🔬 **Technology compatibility scan** — detects 20+ libraries and frameworks in the project and reports Dynatrace compatibility against known version ranges
+- 🔍 **Feature search + Recommended/Advanced toggle** — live filter bar on the Features tab; 8 core rows visible by default; 12 advanced rows revealed on demand; search overrides the mode filter
+- ✏️ **Gradle file modification** — adds the Dynatrace Gradle plugin and `dynatrace {}` configuration block with correct placement and deduplication
+- 🧹 **Approach migration** — switches cleanly between Plugin DSL and per-module by removing stale coordinator declarations, classpath entries, and orphaned `dynatrace {}` blocks
 - 🔀 **Groovy & Kotlin DSL support** — handles both `build.gradle` and `build.gradle.kts`
 - ✅ **Input validation** — real-time validation for Application ID and Beacon URL (with per-module field support)
-- 📋 **Change preview** — the Summary tab shows exactly what will be written before applying
-- 🤖 **AI skill export** — optional Markdown skill-set export (5 files) from a dedicated Skills tab for sharing reusable setup skills with AI agents; choose client, install scope, and output path
+- 📋 **Diff-style change preview** — the Summary tab shows per-file change cards with `+` prefixed generated code before anything is written; secondary details are collapsed behind a toggle
+- 🤖 **AI skill export** — optional Markdown skill-set export (5 files) from a dedicated Skills tab; collapsed to a single opt-in checkbox by default with a plain-English description
 - 🔔 **IDE notifications** — success and error notifications via IntelliJ's notification system
 - ↩️ **Undo support** — all Gradle file writes use `WriteCommandAction` and can be undone with Ctrl/Cmd+Z
 
@@ -59,12 +52,15 @@ configuration for Android projects through a guided wizard dialog.
 | # | Tab              | Description                                                                                                                                                   |
 |---|------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | 1 | **Welcome**      | Detects the Android project; shows module list, plugin approach, setup flow, and mavenCentral() status                                                        |
-| 2 | **Modules**      | Select which app modules to instrument; choose Plugin DSL vs per-module approach for multi-app projects; opt library modules into the OneAgent SDK dependency |
-| 3 | **Environment**  | Enter Dynatrace **Application ID** and **Beacon URL**; for multi-app projects a toggle switches to per-module credential entry                                |
-| 4 | **Technologies** | Scans the project for 20+ libraries and shows Dynatrace compatibility status with detected version numbers                                                    |
-| 5 | **Features**     | Fine-grained instrumentation toggles — monitoring sections, privacy, exclusions, build variant, and advanced agent behavior                                   |
-| 6 | **Skills**       | Export Markdown `skills.md` for AI-agent automation, choosing client + install scope                                                                           |
-| 7 | **Summary**      | Full change preview (file paths + generated blocks) before writing anything                                                                                   |
+| 2 | **Modules** ¹    | Select which app modules to instrument; choose Plugin DSL vs per-module approach for multi-app projects; opt library modules into the OneAgent SDK dependency |
+| 3 | **Technologies** | Scans the project for 20+ libraries and shows Dynatrace compatibility status with detected version numbers                                                    |
+| 4 | **Environment**  | Enter Dynatrace **Application ID** and **Beacon URL**; "New to Dynatrace?" link for first-time customers; per-module credential toggle for multi-app projects |
+| 5 | **Features**     | Recommended instrumentation toggles shown by default; Advanced toggle reveals 12 additional options; live search always overrides the mode filter             |
+| 6 | **Skills**       | Opt-in checkbox to export a reusable AI skill file; collapsed by default — expands to show client, scope, and path options when checked                       |
+| 7 | **Summary**      | Per-file diff cards (`+` prefixed code blocks, action bullets); warnings and startup snippet shown inline; configuration details collapsible                  |
+
+¹ The Modules tab is only shown for **multi-app** projects or projects with **library modules** that can opt into the
+OneAgent SDK. Single-app and feature-module projects skip it — the module summary on the Welcome tab is sufficient.
 
 ---
 
@@ -111,6 +107,13 @@ toggle switches to individual mode.
 
 Use the **search bar** at the top of the tab to filter toggles by name or keyword (e.g. type `gdpr` to jump straight to the opt-in toggle, or `crash` to find crash reporting options). Sections with no matching rows collapse automatically.
 
+The tab opens in **Recommended mode** showing 8 core rows. Click **▼ Show advanced settings** to reveal all 20 options. The search bar always overrides the current mode — typing finds any row regardless of whether it is in the core or advanced group.
+
+| Mode        | Rows shown                                                                                      |
+|-------------|-------------------------------------------------------------------------------------------------|
+| Recommended | Auto-instrument, auto-start, user actions, web requests, lifecycle, crash, ANR, user opt-in     |
+| Advanced    | All of the above + plugin enabled, native crash, Compose, rage tap, name privacy, location, hybrid WebView, load balancing, Grail, strict mode, Session Replay, agent logging |
+
 | Section                  | Options                                                                                       |
 |--------------------------|-----------------------------------------------------------------------------------------------|
 | **Global**               | Plugin enabled (global kill-switch for all instrumentation)                                   |
@@ -128,7 +131,17 @@ Use the **search bar** at the top of the tab to filter toggles by name or keywor
 
 ### AI Skill Export
 
-When **Export AI skill file** is enabled on the Skills tab, the wizard writes **5 Markdown files** during **Finish**:
+The Skills tab opens with a single **"Export AI skill file"** checkbox and a plain-English description:
+
+> *If you use an AI coding assistant (GitHub Copilot, Claude, Cursor, etc.), checking this option exports documentation
+> files that teach your assistant about the Dynatrace SDK — so it can suggest the right APIs without extra prompting.
+> **Skip this if you don't use AI coding tools.***
+
+Checking the box reveals the full configuration: **Target client**, **Install scope**, **Output path**, and a
+**Detected Skills** section that scans the target directory and shows how many of the 5 files are already installed.
+If existing skill files are found on open, the checkbox is auto-checked and the panel expands immediately.
+
+When **Export AI skill file** is enabled and you click **Finish**, the wizard writes **5 Markdown files**:
 
 | File | Content |
 |------|---------|
@@ -243,12 +256,12 @@ See [Build & Run from Source](#build--run-from-source) below.
    _(or right-click in the Project view / Editor → Dynatrace Wizard…)_
 3. Follow the wizard steps:
     - **Welcome** — verify project and module detection
-    - **Modules** — select modules and instrumentation approach
-     - **Environment** — enter Application ID + Beacon URL (optionally per-module for multi-app)
-    - **Technologies** — review compatibility of detected libraries
-    - **Features** — configure instrumentation options
-     - **Skills** — choose whether to export a reusable AI skill file and where it should be installed
-    - **Summary** — review all changes and click **Finish**
+    - **Modules** *(multi-app / library modules only)* — select modules and instrumentation approach
+    - **Technologies** — review compatibility of detected libraries before entering credentials
+    - **Environment** — enter Application ID + Beacon URL; first-time customers see a "Create your first mobile app" link
+    - **Features** — configure instrumentation options (Recommended view by default; toggle Advanced for more)
+    - **Skills** — optionally export a reusable AI skill file (collapsed by default; check to expand)
+    - **Summary** — review per-file change cards and click **Finish** (or click **Finish** from any earlier tab to apply defaults)
 4. **Sync** your Gradle project to activate the Dynatrace agent
 
 > If Dynatrace is already configured the wizard detects it, asks whether to update the existing setup, and pre-fills all
@@ -256,10 +269,18 @@ See [Build & Run from Source](#build--run-from-source) below.
 
 ### Where to Find Your Dynatrace Credentials
 
+**If you already have a Dynatrace mobile app:**
+
 1. Log in to your Dynatrace environment
-2. Navigate to **Settings → Mobile → Mobile apps**
-3. Select or create a mobile app
-4. Copy the **Application ID** and **Beacon URL**
+2. Navigate to **Mobile → (your app) → Settings → Instrumentation**
+3. Copy the **Application ID** and **Beacon URL**
+
+**If you are new to Dynatrace and don't have a mobile app yet:**
+
+Use the **"New to Dynatrace? Create your first mobile app in the portal →"** link on the Environment tab, or go to
+[Instrument an Android app](https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications/instrument-android-app)
+in the Dynatrace documentation — this page walks you through creating a new mobile application and obtaining the
+credentials needed to fill in this tab.
 
 ---
 
@@ -308,14 +329,15 @@ dynatrace_wizard/
     ├── kotlin/com/dynatrace/wizard/
     │   ├── DynatraceWizardAction.kt           # Action (Tools menu / context menu)
     │   ├── wizard/
-    │   │   ├── DynatraceWizardDialog.kt       # 7-tab wizard dialog + navigation
+    │   │   ├── DynatraceWizardDialog.kt       # Tab wizard dialog + navigation + step-bar wiring
+    │   │   ├── WizardStepBar.kt               # Custom-painted horizontal step progress indicator
     │   │   ├── WelcomeStep.kt                 # Tab 1: project detection overview
-    │   │   ├── ModuleSelectionStep.kt         # Tab 2: module selection + approach toggle
-    │   │   ├── EnvironmentConfigStep.kt       # Tab 3: App ID + Beacon URL (per-module support)
-    │   │   ├── SupportedTechnologiesStep.kt   # Tab 4: technology compatibility scan
-    │   │   ├── FeatureToggleStep.kt           # Tab 5: instrumentation feature toggles (with live search)
-    │   │   ├── SkillsStep.kt                  # Tab 6: AI skill export (client, scope, output path)
-    │   │   └── SummaryStep.kt                 # Tab 7: change preview
+    │   │   ├── ModuleSelectionStep.kt         # Tab 2: module selection + approach toggle (multi-app only)
+    │   │   ├── SupportedTechnologiesStep.kt   # Tab 3: technology compatibility scan
+    │   │   ├── EnvironmentConfigStep.kt       # Tab 4: App ID + Beacon URL (per-module support)
+    │   │   ├── FeatureToggleStep.kt           # Tab 5: instrumentation toggles (Recommended/Advanced + search)
+    │   │   ├── SkillsStep.kt                  # Tab 6: AI skill export (collapsed opt-in; client/scope/path)
+    │   │   └── SummaryStep.kt                 # Tab 7: diff-style change cards + collapsible details
     │   ├── model/
     │   │   └── DynatraceConfig.kt             # Configuration data model (incl. ModuleCredentials)
     │   ├── service/

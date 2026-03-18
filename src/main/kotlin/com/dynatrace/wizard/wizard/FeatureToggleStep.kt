@@ -21,12 +21,14 @@ import javax.swing.JPanel
 import javax.swing.event.DocumentEvent
 
 /**
- * Step 3 of the wizard: Feature toggles for Dynatrace instrumentation options.
+ * Step 5 of the wizard: Feature toggles for Dynatrace instrumentation options.
  *
- * A live search bar at the top filters sections and rows in real time.
- * The filterable content lives in a BoxLayout(Y_AXIS) panel so invisible rows
- * collapse cleanly; the Exclusions, Build Variant, and Documentation sections
- * are always visible and sit below the filterable area in the outer FormBuilder.
+ * Displays in two modes toggled by [showAdvanced]:
+ *  • Recommended (default) — shows the 8 core settings every project needs.
+ *  • All settings — exposes all 20 options.
+ *
+ * A live search bar overrides the mode filter: typing reveals any matching row
+ * regardless of whether it is marked as advanced.
  */
 class FeatureToggleStep {
 
@@ -94,26 +96,52 @@ class FeatureToggleStep {
         )
     }
 
-    // ── Search infrastructure ──────────────────────────────────────────────
+    // ── Search + mode infrastructure ───────────────────────────────────────
 
-    /** Live-search field placed directly above the filterable section list. */
     private val searchField = JBTextField()
 
-    /** "✕" button — visible only when search field contains text. */
     private val clearSearchButton = JButton("✕").apply {
         preferredSize = Dimension(JBUI.scale(22), JBUI.scale(22))
         isFocusable = false
         toolTipText = "Clear search"
     }
 
-    /** Container for all filterable sections (Global → Debug). Uses BoxLayout Y_AXIS
-     *  so that setting isVisible = false on a child row collapses its space. */
     private val filterableContent = JPanel().apply {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
         isOpaque = false
     }
 
-    private data class FilterRow(val panel: JComponent, val keywords: String)
+    /**
+     * Whether the user has expanded the advanced-settings view.
+     * When false only rows with [FilterRow.isAdvanced] == false are shown
+     * (unless a search query overrides the filter).
+     */
+    private var showAdvanced = false
+
+    /**
+     * Toggle button that switches between Recommended and All-settings view.
+     * Text and arrow direction are updated by [syncAdvancedToggle].
+     */
+    private val advancedToggleButton = JButton().apply {
+        isContentAreaFilled = false
+        isBorderPainted     = false
+        isFocusPainted      = false
+        cursor = java.awt.Cursor(java.awt.Cursor.HAND_CURSOR)
+        font       = JBUI.Fonts.smallFont()
+        foreground = WizardColors.accent
+        addActionListener {
+            showAdvanced = !showAdvanced
+            syncAdvancedToggle()
+            applyVisibility()
+        }
+    }
+
+    private data class FilterRow(
+        val panel: JComponent,
+        val keywords: String,
+        /** When true this row is hidden in Recommended mode; shown in All-settings mode. */
+        val isAdvanced: Boolean = false
+    )
     private data class FilterSection(val separator: TitledSeparator, val rows: List<FilterRow>)
     private val filterSections = mutableListOf<FilterSection>()
 
@@ -130,7 +158,7 @@ class FeatureToggleStep {
         pluginEnabledCheckBox.addActionListener { syncFeatureAvailability() }
         autoInstrumentCheckBox.addActionListener { syncFeatureAvailability() }
 
-        // ── Search bar setup ───────────────────────────────────────────────
+        // ── Search bar ─────────────────────────────────────────────────────
         searchField.emptyText.setText("Search features…")
         clearSearchButton.isVisible = false
         clearSearchButton.addActionListener {
@@ -139,9 +167,8 @@ class FeatureToggleStep {
         }
         searchField.document.addDocumentListener(object : DocumentAdapter() {
             override fun textChanged(e: DocumentEvent) {
-                val query = searchField.text
-                clearSearchButton.isVisible = query.isNotEmpty()
-                applyFilter(query)
+                clearSearchButton.isVisible = searchField.text.isNotEmpty()
+                applyVisibility()
             }
         })
         val searchRow = JPanel(BorderLayout(JBUI.scale(4), 0)).apply {
@@ -152,35 +179,40 @@ class FeatureToggleStep {
 
         // ── Build filterable sections into filterableContent ───────────────
         populateFilterableContent()
+        syncAdvancedToggle()   // sets initial button text
 
         val panel = FormBuilder.createFormBuilder()
             .addComponent(
                 JBLabel("Feature configuration").apply {
-                    font = JBUI.Fonts.label(16f).asBold()
+                    font       = JBUI.Fonts.label(16f).asBold()
                     foreground = WizardColors.accent
-                    border = JBUI.Borders.emptyBottom(2)
+                    border     = JBUI.Borders.emptyBottom(2)
                 }
             )
             .addComponent(
-                JBLabel("Enable or disable individual instrumentation capabilities.").apply {
+                JBLabel(
+                    "<html>The recommended settings below cover most projects. " +
+                    "Use the toggle to reveal advanced options.</html>"
+                ).apply {
                     foreground = UIUtil.getContextHelpForeground()
-                    border = JBUI.Borders.emptyBottom(4)
+                    border     = JBUI.Borders.emptyBottom(4)
                 }
             )
-            .addComponent(instrumentationStatusLabel.apply { border = JBUI.Borders.emptyBottom(4) })
+            .addComponent(instrumentationStatusLabel.apply { border = JBUI.Borders.emptyBottom(2) })
+            .addComponent(advancedToggleButton.apply {
+                border = JBUI.Borders.emptyBottom(6)
+                horizontalAlignment = javax.swing.SwingConstants.LEFT
+            })
             .addComponent(searchRow)
             .addVerticalGap(6)
-            // All filterable sections live here
             .addComponent(filterableContent)
             // ── Exclusions (always visible) ───────────────────────────────
             .addComponent(TitledSeparator("Exclusions (Comma-Separated)"))
             .addLabeledComponent(JBLabel("Exclude packages:"),
-                fieldWithHint(excludePackagesField,
-                    "Skips all classes in the listed packages."), true)
+                fieldWithHint(excludePackagesField, "Skips all classes in the listed packages."), true)
             .addVerticalGap(4)
             .addLabeledComponent(JBLabel("Exclude classes:"),
-                fieldWithHint(excludeClassesField,
-                    "Skips specific fully-qualified class names."), true)
+                fieldWithHint(excludeClassesField, "Skips specific fully-qualified class names."), true)
             .addVerticalGap(4)
             .addLabeledComponent(JBLabel("Exclude methods:"),
                 fieldWithHint(excludeMethodsField,
@@ -213,14 +245,15 @@ class FeatureToggleStep {
     }
 
     /**
-     * Populates [filterableContent] with all filterable sections (Global → Debug).
-     * Each row stores its visible-text keywords for case-insensitive matching.
+     * Populates [filterableContent] with all filterable sections.
+     * Rows marked [FilterRow.isAdvanced] are hidden until the user enables
+     * the All-settings view; their section separators collapse automatically
+     * when every row in the section is hidden.
      */
     private fun populateFilterableContent() {
         filterSections.clear()
         filterableContent.removeAll()
 
-        /** Registers a separator + rows as a named section and appends them to the panel. */
         fun section(title: String, build: MutableList<FilterRow>.() -> Unit) {
             val sep = TitledSeparator(title).also {
                 it.alignmentX = Component.LEFT_ALIGNMENT
@@ -231,25 +264,35 @@ class FeatureToggleStep {
             filterSections.add(FilterSection(sep, rows))
         }
 
-        /** Creates a checkbox row, registers its keywords, and appends it. */
+        /**
+         * @param isAdvanced  When true this row is hidden in Recommended mode.
+         *                    Mark a row as advanced when the typical first-time user
+         *                    does not need to change its default value.
+         */
         fun MutableList<FilterRow>.row(
             checkbox: JBCheckBox,
             hint: String,
-            extraKeywords: String = ""
+            extraKeywords: String = "",
+            isAdvanced: Boolean = false
         ) {
             val panel = checkboxItem(checkbox, hint).also {
                 it.alignmentX = Component.LEFT_ALIGNMENT
                 filterableContent.add(it)
             }
-            add(FilterRow(panel, "${checkbox.text} $hint $extraKeywords".lowercase()))
+            add(FilterRow(panel, "${checkbox.text} $hint $extraKeywords".lowercase(), isAdvanced))
         }
 
+        // ── Global ─────────────────────────────────────────────────────────
+        // Advanced: most users never need the kill-switch.
         section("Global") {
             row(pluginEnabledCheckBox,
                 "Unchecking disables bytecode instrumentation but keeps the OneAgent SDK dependency.",
-                "pluginEnabled kill-switch disable all")
+                "pluginEnabled kill-switch disable all",
+                isAdvanced = true)
         }
 
+        // ── Instrumentation ────────────────────────────────────────────────
+        // Both rows are core — every project needs auto-instrumentation and auto-start.
         section("Instrumentation") {
             row(autoInstrumentCheckBox,
                 "Transforms bytecode at compile time for automatic capture of HTTP, lifecycle, and Compose events.",
@@ -260,7 +303,10 @@ class FeatureToggleStep {
                 "autoStart startup onCreate direct boot manual")
         }
 
-        section("Monitoring Sections") {
+        // ── Monitoring Sections ────────────────────────────────────────────
+        // Core: userActions, webRequests, lifecycle, crashReporting, anrReporting.
+        // Advanced: nativeCrashReporting — only relevant for NDK (C/C++) code.
+        section("Monitoring") {
             row(userActionsCheckBox,
                 "Track user taps, swipes, and Compose interactions.",
                 "userActions tap swipe gesture click UI")
@@ -275,24 +321,33 @@ class FeatureToggleStep {
                 "crash exception stacktrace uncaught crashReporting")
             row(anrReportingCheckBox,
                 "Detect Application Not Responding events on Android 11+. " +
-                "Requires app restart within 10 min to send the event.",
+                "Recommended for all apps — requires restart within 10 min to send the event.",
                 "ANR not responding freeze hang android 11")
             row(nativeCrashReportingCheckBox,
-                "Capture C/C++ (NDK) crashes on Android 11+. " +
+                "Capture C/C++ (NDK) crashes on Android 11+. Only relevant if your app uses native code. " +
                 "Requires app restart within 10 min to send the event.",
-                "native crash NDK C++ nativeCrashReporting android 11")
+                "native crash NDK C++ nativeCrashReporting android 11",
+                isAdvanced = true)
         }
 
+        // ── Compose & Behavioral Events ────────────────────────────────────
+        // Both are advanced: composeEnabled is on by default and most users never change it;
+        // rageTap is a specialist behavioral feature.
         section("Compose & Behavioral Events") {
             row(composeEnabledCheckBox,
                 "Enabled by default from plugin 8.271+. Instruments Compose clickable, " +
-                "swipeable, slider, pager, and pull-refresh.",
-                "Jetpack Compose composable composeEnabled UI")
+                "swipeable, slider, pager, and pull-refresh. Disable only to reduce build time.",
+                "Jetpack Compose composable composeEnabled UI",
+                isAdvanced = true)
             row(rageTapCheckBox,
                 "Detect frustrated users repeatedly tapping an unresponsive area.",
-                "rage tap frustrated behavior detectRageTaps behavioral")
+                "rage tap frustrated behavior detectRageTaps behavioral",
+                isAdvanced = true)
         }
 
+        // ── Privacy ────────────────────────────────────────────────────────
+        // Core: userOptIn — every app must decide on GDPR consent before release.
+        // Advanced: the remaining three are specialist use cases.
         section("Privacy") {
             row(userOptInCheckBox,
                 "Require explicit user consent before collecting data (GDPR). " +
@@ -301,44 +356,53 @@ class FeatureToggleStep {
             row(namePrivacyCheckBox,
                 "Masks autogenerated user action names to prevent PII leakage. " +
                 "Available from plugin 8.249+. Reduces Compose metadata captured.",
-                "PII mask privacy namePrivacy action names")
+                "PII mask privacy namePrivacy action names",
+                isAdvanced = true)
             row(locationMonitoringCheckBox,
                 "Appends already-processed location data (truncated to ~1 km). " +
                 "OneAgent will NOT request location permissions.",
-                "GPS location coordinates geo locationMonitoring")
+                "GPS location coordinates geo locationMonitoring",
+                isAdvanced = true)
             row(hybridMonitoringCheckBox,
                 "Monitor web content in WebViews (requires Dynatrace JS agent on your pages).",
-                "WebView hybrid web monitoring hybridMonitoring webview")
+                "WebView hybrid web monitoring hybridMonitoring webview",
+                isAdvanced = true)
         }
 
+        // ── Advanced ───────────────────────────────────────────────────────
+        // All rows here are advanced by definition.
         section("Advanced") {
             row(agentBehaviorLbCheckBox,
                 "Enables client-side load balancing between multiple ActiveGates at startup.",
-                "load balancing ActiveGate startup agentBehavior loadBalancing")
+                "load balancing ActiveGate startup agentBehavior loadBalancing",
+                isAdvanced = true)
             row(agentBehaviorGrailCheckBox,
                 "Activates New RUM Experience (Grail) on first app start " +
                 "(can be overridden by cluster config).",
-                "Grail RUM experience new rum grail agentBehavior")
+                "Grail RUM experience new rum grail agentBehavior",
+                isAdvanced = true)
             row(strictModeCheckBox,
                 "When enabled the build fails if a variant has no matching Dynatrace config — " +
                 "forces full coverage.",
-                "strict mode build fail variant strictMode")
+                "strict mode build fail variant strictMode",
+                isAdvanced = true)
         }
 
+        // ── Session Replay ─────────────────────────────────────────────────
         section("Session Replay") {
             row(sessionReplayCheckBox,
                 "Records screen content and user interactions for visual session playback. " +
                 "Requires a Session Replay license. Emits sessionReplay.enabled(true) — " +
                 "available from plugin 8.281+.",
-                "session replay record screen visual playback video")
+                "session replay record screen visual playback video",
+                isAdvanced = true)
         }
 
-        // Debug section — warning label + checkbox + link bundled into one collapsible row
+        // ── Debug ───────────────────────────────────────────────────────────
         section("Debug") {
             val warningLabel = JBLabel(
                 "<html><b>⚠ Debug only — do not ship to production.</b> " +
-                "Remove this flag before building your Play Store or release APK. " +
-                "Extra logging may slow down the app and expose sensitive data in device logs.</html>"
+                "Remove this flag before building your Play Store or release APK.</html>"
             ).apply {
                 foreground = WizardColors.error
                 border = JBUI.Borders.empty(2, 0, 4, 0)
@@ -362,31 +426,55 @@ class FeatureToggleStep {
             }
             filterableContent.add(debugGroup)
             add(FilterRow(debugGroup,
-                "debug logging agent logcat production dtx caa agentLogging remove production"))
+                "debug logging agent logcat production dtx caa agentLogging remove production",
+                isAdvanced = true))
         }
     }
 
     /**
-     * Filters [filterSections] in real time: shows/hides each row and its section
-     * separator based on whether [query] appears anywhere in the row's keywords.
-     * An empty query restores all rows.
+     * Updates row and section visibility based on both the active search query
+     * and the current [showAdvanced] mode.
+     *
+     * Priority:
+     *  1. If a search query is active → show every row whose keywords match,
+     *     ignoring [FilterRow.isAdvanced] (search always reveals everything).
+     *  2. If no search query → show every row that is not advanced, or every row
+     *     when [showAdvanced] is true.
+     *
+     * A section's [TitledSeparator] is hidden when none of its rows are visible.
      */
-    private fun applyFilter(query: String) {
-        val trimmed = query.trim().lowercase()
-        val showAll = trimmed.isEmpty()
+    private fun applyVisibility() {
+        val query      = searchField.text.trim().lowercase()
+        val isSearching = query.isNotEmpty()
 
         for (section in filterSections) {
             var anyVisible = false
             for (row in section.rows) {
-                val visible = showAll || row.keywords.contains(trimmed)
+                val visible = when {
+                    isSearching  -> row.keywords.contains(query)   // search overrides mode
+                    showAdvanced -> true                            // all-settings mode
+                    else         -> !row.isAdvanced                // recommended mode
+                }
                 row.panel.isVisible = visible
                 if (visible) anyVisible = true
             }
-            section.separator.isVisible = showAll || anyVisible
+            section.separator.isVisible = anyVisible
         }
 
         filterableContent.revalidate()
         filterableContent.repaint()
+    }
+
+    /** Syncs the toggle button text and tooltip to reflect the current [showAdvanced] state. */
+    private fun syncAdvancedToggle() {
+        if (showAdvanced) {
+            advancedToggleButton.text       = "▲  Hide advanced settings"
+            advancedToggleButton.toolTipText = "Show only the recommended core settings"
+        } else {
+            advancedToggleButton.text       = "▼  Show advanced settings"
+            advancedToggleButton.toolTipText =
+                "Reveal advanced options: native crash, Compose tuning, Session Replay, Privacy details, and more"
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -506,6 +594,29 @@ class FeatureToggleStep {
         excludeClassesField.text                = config.excludeClasses
         excludeMethodsField.text                = config.excludeMethods
         buildVariantField.text                  = if (config.buildVariant == "all") "" else config.buildVariant
+
+        // Auto-expand to All-settings mode when the loaded config contains any value
+        // that only appears in advanced sections — the user clearly needs to see them.
+        val hasAdvancedValues =
+            !config.pluginEnabled           ||
+            !config.nativeCrashReporting    ||
+            !config.composeEnabled          ||
+            config.rageTapDetection         ||
+            config.namePrivacy              ||
+            config.locationMonitoring       ||
+            config.hybridMonitoring         ||
+            config.agentBehaviorLoadBalancing ||
+            config.agentBehaviorGrail       ||
+            config.strictMode               ||
+            config.sessionReplayEnabled     ||
+            config.agentLogging
+
+        if (hasAdvancedValues && !showAdvanced) {
+            showAdvanced = true
+            syncAdvancedToggle()
+        }
+
         syncFeatureAvailability()
+        applyVisibility()
     }
 }

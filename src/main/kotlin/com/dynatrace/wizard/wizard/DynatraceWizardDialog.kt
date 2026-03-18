@@ -12,9 +12,9 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.ui.components.JBScrollPane
-import com.intellij.ui.components.JBTabbedPane
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
+import java.awt.CardLayout
 import java.awt.Dimension
 import javax.swing.Action
 import javax.swing.JComponent
@@ -22,15 +22,17 @@ import javax.swing.JPanel
 import javax.swing.ScrollPaneConstants
 
 /**
- * Main wizard dialog — 7-step tab-based wizard.
+ * Main wizard dialog — step-based wizard driven by [WizardStepBar] + Back / Next buttons.
  *
- *  Tab 0  Welcome         — project detection overview
- *  Tab 1  Modules         — per-module selection (checkboxes for MULTI_APP)
- *  Tab 2  Environment     — Application ID + Beacon URL
- *  Tab 3  Technologies    — supported technologies
- *  Tab 4  Features        — feature toggles
- *  Tab 5  Skills          — AI skill export configuration
- *  Tab 6  Summary         — change preview + Finish
+ * Each step is a card in a [CardLayout]; the [WizardStepBar] above the card area is the sole
+ * visual navigation element (replacing the old [com.intellij.ui.components.JBTabbedPane] headers).
+ * Clicking a step-bar circle navigates directly, subject to the same validation rules as Next →.
+ *
+ * Step count varies by project type:
+ *  • MULTI_APP or project has library modules (7 steps):
+ *      Welcome → Modules → Technologies → Environment → Features → Skills → Summary
+ *  • All other flows (6 steps — Modules step omitted):
+ *      Welcome → Technologies → Environment → Features → Skills → Summary
  */
 class DynatraceWizardDialog(
     private val project: Project,
@@ -52,22 +54,28 @@ class DynatraceWizardDialog(
     private val skillsStep          = SkillsStep(project)
     private val summaryStep         = SummaryStep()
 
-    private val tabbedPane   = JBTabbedPane()
-    private val gradleService = GradleModificationService(project)
+    // ── Card-layout navigation state ─────────────────────────────────────────
+    private val cardPanel        = JPanel(CardLayout())
+    private var currentTabIndex  = 0
+    private var totalTabs        = 0
+
+    private val gradleService       = GradleModificationService(project)
     private val skillsExportService = SkillsExportService(project)
 
     private lateinit var projectInfo: ProjectDetectionService.ProjectInfo
     private lateinit var prevAction:  DialogWrapperAction
     private lateinit var nextAction:  DialogWrapperAction
+    private lateinit var stepBar:     WizardStepBar
 
-    // Tab index constants
-    private val TAB_MODULES      = 1
-    private val TAB_ENVIRONMENT  = 2
-    private val TAB_SKILLS       = 5
-    private val TAB_SUMMARY      = 6
+    // ── Dynamic step indices (set in createCenterPanel) ───────────────────────
+    private var idxModules:     Int? = null
+    private var idxEnvironment: Int  = -1
+    private var idxSkills:      Int  = -1
+    private var idxSummary:     Int  = -1
 
     init {
-        title = if (existingConfig != null) "Dynatrace Wizard — Update Configuration" else "Dynatrace Wizard"
+        title = if (existingConfig != null) "Configure Dynatrace Mobile SDK — Update"
+                else                        "Configure Dynatrace Mobile SDK"
         setOKButtonText("Finish")
         init()
         // Pre-populate fields when updating an existing config
@@ -98,93 +106,147 @@ class DynatraceWizardDialog(
     }
 
     override fun createCenterPanel(): JComponent {
-        val welcomePanel      = welcomeStep.createPanel()
-        projectInfo           = welcomeStep.getProjectInfo()
-        val environmentPanel  = environmentStep.createPanel(projectInfo.appModules)
-        val modulePanel       = moduleSelectionStep.createPanel(projectInfo)
-        val techPanel         = supportedTechStep.createPanel(projectInfo)
-        val featurePanel      = featureStep.createPanel()
-        val skillsPanel       = skillsStep.createPanel(projectInfo)
-        val summaryPanel      = summaryStep.createPanel()
+        val welcomePanel     = welcomeStep.createPanel()
+        projectInfo          = welcomeStep.getProjectInfo()
+        val environmentPanel = environmentStep.createPanel(projectInfo.appModules)
+        val modulePanel      = moduleSelectionStep.createPanel(projectInfo)
+        val techPanel        = supportedTechStep.createPanel(projectInfo)
+        val featurePanel     = featureStep.createPanel()
+        val skillsPanel      = skillsStep.createPanel(projectInfo)
+        val summaryPanel     = summaryStep.createPanel()
 
-        tabbedPane.addTab("1. Welcome",      scrollable(welcomePanel))
-        tabbedPane.addTab("2. Modules",      scrollable(modulePanel))
-        tabbedPane.addTab("3. Environment",  scrollable(environmentPanel))
-        tabbedPane.addTab("4. Technologies", scrollable(techPanel))
-        tabbedPane.addTab("5. Features",     scrollable(featurePanel))
-        tabbedPane.addTab("6. Skills",       scrollable(skillsPanel))
-        tabbedPane.addTab("7. Summary",      scrollable(summaryPanel))
+        // Show the Modules tab only when the user has real decisions to make there:
+        //  • MULTI_APP — user picks which app modules to instrument + approach choice
+        //  • Library modules present — user opts in to the OneAgent SDK per library
+        // For every other flow the module information shown on the Welcome tab is
+        // sufficient; a separate read-only Modules tab would be wasted real estate.
+        val showModulesTab = projectInfo.setupFlow == SetupFlow.MULTI_APP ||
+                             projectInfo.libraryModules.isNotEmpty()
 
-        // Wire approach-change listener so the per-module toggle reacts immediately
-        // when the user flips the Plugin DSL / per-module radio on the Modules tab.
+        // ── Register cards ────────────────────────────────────────────────────
+        val stepNames = mutableListOf<String>()
+        fun addCard(name: String, panel: JComponent) {
+            stepNames += name
+            cardPanel.add(scrollable(panel), totalTabs.toString())
+            totalTabs++
+        }
+
+        addCard("Welcome",      welcomePanel)
+        if (showModulesTab) {
+            idxModules = totalTabs
+            addCard("Modules",  modulePanel)
+        }
+        addCard("Technologies", techPanel)
+        idxEnvironment = totalTabs
+        addCard("Environment",  environmentPanel)
+        addCard("Features",     featurePanel)
+        idxSkills = totalTabs
+        addCard("Skills",       skillsPanel)
+        idxSummary = totalTabs
+        addCard("Summary",      summaryPanel)
+
+        // ── Step bar ──────────────────────────────────────────────────────────
+        stepBar = WizardStepBar(stepNames)
+        stepBar.onStepClicked = { targetIdx ->
+            if (targetIdx <= currentTabIndex) {
+                // Backward navigation: always allow
+                showTab(targetIdx)
+            } else {
+                // Forward navigation: check required gates
+                val idxM = idxModules
+                when {
+                    idxM != null &&
+                    targetIdx > idxM &&
+                    projectInfo.setupFlow == SetupFlow.MULTI_APP &&
+                    !moduleSelectionStep.hasSelection(projectInfo.appModules) -> {
+                        showTab(idxM)
+                        val target = moduleSelectionStep.getValidationComponent()
+                        setErrorText("Select at least one application module before continuing.", target)
+                        target?.requestFocusInWindow()
+                    }
+                    targetIdx > idxEnvironment && !environmentStep.isValid() -> {
+                        showTab(idxEnvironment)
+                        val target = environmentStep.focusFirstInvalidField()
+                        setErrorText(
+                            environmentStep.getValidationMessage()
+                                ?: "Enter your Application ID and Beacon URL before continuing.",
+                            target
+                        )
+                    }
+                    else -> showTab(targetIdx)
+                }
+            }
+        }
+
+        // ── Approach-change wiring (unchanged logic) ──────────────────────────
         moduleSelectionStep.setOnApproachChanged {
             if (projectInfo.setupFlow == SetupFlow.MULTI_APP) {
                 val usePluginDsl = moduleSelectionStep.getUsePluginDslForMultiApp()
                 environmentStep.setPerModuleToggleVisible(!usePluginDsl)
-                if (!usePluginDsl) {
-                    environmentStep.updateVisibleModules(selectedModuleNames())
-                }
+                if (!usePluginDsl) environmentStep.updateVisibleModules(selectedModuleNames())
             }
         }
-
-        // Set initial toggle state based on the detected/default approach.
         if (projectInfo.setupFlow == SetupFlow.MULTI_APP) {
             val usePluginDsl = moduleSelectionStep.getUsePluginDslForMultiApp()
             environmentStep.setPerModuleToggleVisible(!usePluginDsl)
-            if (!usePluginDsl) {
-                environmentStep.updateVisibleModules(selectedModuleNames())
-            }
+            if (!usePluginDsl) environmentStep.updateVisibleModules(selectedModuleNames())
         }
 
-        tabbedPane.addChangeListener {
-            setErrorText(null)
-            if (tabbedPane.selectedIndex == TAB_SUMMARY) {
-                val effectiveInfo = getEffectiveProjectInfo()
-                val deselectedModules = computeDeselectedModules(effectiveInfo)
-                val config = buildConfig()
-                val skillsConfig = buildSkillsConfig()
-                val skillPreview = if (skillsConfig.exportSkillFile) {
-                    SkillsExportService().generateSkillsMarkdown(
-                        effectiveInfo,
-                        config,
-                        skillsConfig,
-                        moduleSelectionStep.getLibraryModulesForSdk(),
-                        deselectedModules
-                    )
-                } else null
-                summaryStep.updateSummary(
-                    effectiveInfo,
-                    config,
-                    skillsConfig,
-                    gradleService,
-                    moduleSelectionStep.getLibraryModulesForSdk(),
-                    deselectedModules,
-                    skillPreview
-                )
-            }
-            // Re-evaluate per-module toggle visibility and visible module list every
-            // time the Environment tab is shown — catches checkbox changes made on the
-            // Modules tab while the Environment tab was not in view.
-            if (tabbedPane.selectedIndex == TAB_ENVIRONMENT && projectInfo.setupFlow == SetupFlow.MULTI_APP) {
-                val usePluginDsl = moduleSelectionStep.getUsePluginDslForMultiApp()
-                environmentStep.setPerModuleToggleVisible(!usePluginDsl)
-                if (!usePluginDsl) {
-                    environmentStep.updateVisibleModules(selectedModuleNames())
-                }
-            }
-            updateNavButtons()
-        }
+        cardPanel.preferredSize = Dimension(760, 590)
 
-        tabbedPane.preferredSize = Dimension(760, 640)
-        return tabbedPane
+        val wrapper = JPanel(BorderLayout())
+        wrapper.add(stepBar,    BorderLayout.NORTH)
+        wrapper.add(cardPanel,  BorderLayout.CENTER)
+        return wrapper
     }
 
     // ── Navigation ────────────────────────────────────────────────────────────
 
     /**
-     * Wraps [panel] in a JBScrollPane so its content is top-aligned and scrollable.
-     * Pinning to BorderLayout.NORTH ensures the scroll pane reports the correct
-     * preferred height instead of stretching the panel to fill the viewport.
+     * Switches the visible card, updates the step bar, refreshes nav buttons,
+     * and fires [onTabShown] for any tab-specific side-effects.
+     */
+    private fun showTab(idx: Int) {
+        currentTabIndex = idx.coerceIn(0, totalTabs - 1)
+        (cardPanel.layout as CardLayout).show(cardPanel, currentTabIndex.toString())
+        if (::stepBar.isInitialized) stepBar.currentStep = currentTabIndex
+        updateNavButtons()
+        onTabShown(currentTabIndex)
+    }
+
+    /**
+     * Side-effects triggered whenever a step becomes visible.
+     * Replaces the old [JBTabbedPane] ChangeListener.
+     */
+    private fun onTabShown(idx: Int) {
+        setErrorText(null)
+
+        if (idx == idxSummary) {
+            val effectiveInfo     = getEffectiveProjectInfo()
+            val deselectedModules = computeDeselectedModules(effectiveInfo)
+            val config            = buildConfig()
+            val skillsConfig      = buildSkillsConfig()
+            val skillPreview = if (skillsConfig.exportSkillFile) {
+                SkillsExportService().generateSkillsMarkdown(
+                    effectiveInfo, config, skillsConfig,
+                    moduleSelectionStep.getLibraryModulesForSdk(), deselectedModules
+                )
+            } else null
+            summaryStep.updateSummary(
+                effectiveInfo, config, skillsConfig, gradleService,
+                moduleSelectionStep.getLibraryModulesForSdk(), deselectedModules, skillPreview
+            )
+        }
+
+        if (idx == idxEnvironment && projectInfo.setupFlow == SetupFlow.MULTI_APP) {
+            val usePluginDsl = moduleSelectionStep.getUsePluginDslForMultiApp()
+            environmentStep.setPerModuleToggleVisible(!usePluginDsl)
+            if (!usePluginDsl) environmentStep.updateVisibleModules(selectedModuleNames())
+        }
+    }
+
+    /**
+     * Wraps [panel] in a [JBScrollPane] that is top-aligned and vertically scrollable.
      */
     private fun scrollable(panel: JComponent): JComponent {
         val wrapper = JPanel(BorderLayout()).apply {
@@ -198,37 +260,32 @@ class DynatraceWizardDialog(
         }
     }
 
-    /** Shows/hides Back, Next, and Finish depending on which tab is active. */
+    /** Finish is always visible so the user can apply defaults from any step. */
     private fun updateNavButtons() {
-        val idx  = tabbedPane.selectedIndex
-        val last = tabbedPane.tabCount - 1
-        getButton(prevAction)?.isVisible = idx > 0
-        getButton(nextAction)?.isVisible = idx < last
-        getButton(okAction)?.isVisible   = idx == last
+        getButton(prevAction)?.isVisible = currentTabIndex > 0
+        getButton(nextAction)?.isVisible = currentTabIndex < totalTabs - 1
+        getButton(okAction)?.isVisible   = true
     }
 
     override fun createActions(): Array<Action> {
         prevAction = object : DialogWrapperAction("← Back") {
             override fun doAction(e: java.awt.event.ActionEvent?) {
-                if (tabbedPane.selectedIndex > 0) tabbedPane.selectedIndex -= 1
+                if (currentTabIndex > 0) showTab(currentTabIndex - 1)
             }
         }
-
         nextAction = object : DialogWrapperAction("Next →") {
             override fun doAction(e: java.awt.event.ActionEvent?) {
-                val idx = tabbedPane.selectedIndex
-                if (!validateTab(idx)) return
-                if (idx < tabbedPane.tabCount - 1) tabbedPane.selectedIndex += 1
+                if (!validateTab(currentTabIndex)) return
+                if (currentTabIndex < totalTabs - 1) showTab(currentTabIndex + 1)
             }
         }
-
         return arrayOf(prevAction, nextAction, okAction, cancelAction)
     }
 
-    /** Returns `true` when the tab at [idx] passes its validation rules. */
+    /** Returns `true` when the step at [idx] passes its validation rules. */
     private fun validateTab(idx: Int): Boolean {
-        return when (idx) {
-            TAB_ENVIRONMENT -> {
+        return when {
+            idx == idxEnvironment -> {
                 if (!environmentStep.isValid()) {
                     val target = environmentStep.focusFirstInvalidField()
                     setErrorText(
@@ -239,7 +296,7 @@ class DynatraceWizardDialog(
                     false
                 } else true
             }
-            TAB_MODULES -> {
+            idx == idxModules -> {
                 if (projectInfo.setupFlow == SetupFlow.MULTI_APP &&
                     !moduleSelectionStep.hasSelection(projectInfo.appModules)
                 ) {
@@ -249,11 +306,11 @@ class DynatraceWizardDialog(
                     false
                 } else true
             }
-            TAB_SKILLS -> {
-                val validationMessage = skillsStep.getSkillFileValidationMessage()
-                if (validationMessage != null) {
+            idx == idxSkills -> {
+                val msg = skillsStep.getSkillFileValidationMessage()
+                if (msg != null) {
                     val target = skillsStep.getSkillFileValidationComponent()
-                    setErrorText(validationMessage, target)
+                    setErrorText(msg, target)
                     target.requestFocusInWindow()
                     false
                 } else true
@@ -266,7 +323,7 @@ class DynatraceWizardDialog(
 
     override fun doOKAction() {
         if (!environmentStep.isValid()) {
-            tabbedPane.selectedIndex = TAB_ENVIRONMENT
+            showTab(idxEnvironment)
             val target = environmentStep.focusFirstInvalidField()
             setErrorText(
                 environmentStep.getValidationMessage()
@@ -278,16 +335,16 @@ class DynatraceWizardDialog(
         if (projectInfo.setupFlow == SetupFlow.MULTI_APP &&
             !moduleSelectionStep.hasSelection(projectInfo.appModules)
         ) {
-            tabbedPane.selectedIndex = TAB_MODULES
+            showTab(idxModules ?: return)
             val target = moduleSelectionStep.getValidationComponent()
             setErrorText("Please select at least one application module to instrument.", target)
             target?.requestFocusInWindow()
             return
         }
-        skillsStep.getSkillFileValidationMessage()?.let { validationMessage ->
-            tabbedPane.selectedIndex = TAB_SKILLS
+        skillsStep.getSkillFileValidationMessage()?.let { msg ->
+            showTab(idxSkills)
             val target = skillsStep.getSkillFileValidationComponent()
-            setErrorText(validationMessage, target)
+            setErrorText(msg, target)
             target.requestFocusInWindow()
             return
         }
@@ -298,21 +355,12 @@ class DynatraceWizardDialog(
 
     // ── Config helpers ────────────────────────────────────────────────────────
 
-    /**
-     * Returns a [ProjectDetectionService.ProjectInfo] where the module list is filtered to only the
-     * app modules the user chose on the Modules tab.  All other flows return
-     * [projectInfo] unchanged.
-     */
     private fun getEffectiveProjectInfo(): ProjectDetectionService.ProjectInfo {
         val selectedAppModules = moduleSelectionStep.getSelectedAppModules(projectInfo.appModules)
-
-        // For MULTI_APP, override usesPluginDsl from the approach the user chose on the Modules tab
         val base = if (projectInfo.setupFlow == SetupFlow.MULTI_APP) {
             projectInfo.copy(usesPluginDsl = moduleSelectionStep.getUsePluginDslForMultiApp())
         } else projectInfo
-
         if (selectedAppModules.size == base.appModules.size) return base
-
         val selectedNames   = selectedAppModules.map { it.name }.toSet()
         val filteredModules = base.allModules.filter {
             it.type != ModuleType.APPLICATION || it.name in selectedNames
@@ -323,86 +371,70 @@ class DynatraceWizardDialog(
         )
     }
 
-    /**
-     * Returns the names of the app modules currently checked on the Modules tab.
-     * Falls back to all detected app modules when no checkboxes are shown (single-app flows).
-     */
     private fun selectedModuleNames(): Set<String> =
         moduleSelectionStep.getSelectedAppModules(projectInfo.appModules).map { it.name }.toSet()
 
-    /**
-     * Returns the app modules that the user has explicitly deselected on the Modules tab.
-     * Only relevant for MULTI_APP + per-module approach; returns an empty list otherwise.
-     */
     private fun computeDeselectedModules(
         effective: ProjectDetectionService.ProjectInfo
     ): List<ProjectDetectionService.ModuleInfo> {
         if (projectInfo.setupFlow != SetupFlow.MULTI_APP) return emptyList()
-        if (effective.usesPluginDsl) return emptyList()   // Plugin DSL coordinator handles all modules
+        if (effective.usesPluginDsl) return emptyList()
         val selectedNames = effective.appModules.map { it.name }.toSet()
         return projectInfo.appModules.filter { it.name !in selectedNames }
     }
 
     private fun buildConfig() = DynatraceConfig(
-        applicationId          = environmentStep.getAppId(),
-        beaconUrl              = environmentStep.getBeaconUrl(),
-        moduleCredentials      = environmentStep.getModuleCredentials(),
-        autoStartEnabled       = featureStep.isAutoStartEnabled(),
-        userOptIn              = featureStep.isUserOptIn(),
-        autoInstrument         = featureStep.isAutoInstrument(),
-        pluginEnabled          = featureStep.isPluginEnabled(),
-        crashReporting         = featureStep.isCrashReporting(),
-        anrReporting           = featureStep.isAnrReporting(),
-        nativeCrashReporting   = featureStep.isNativeCrashReporting(),
-        hybridMonitoring       = featureStep.isHybridMonitoring(),
-        userActionsEnabled     = featureStep.isUserActionsEnabled(),
-        webRequestsEnabled     = featureStep.isWebRequestsEnabled(),
-        lifecycleEnabled       = featureStep.isLifecycleEnabled(),
-        locationMonitoring     = featureStep.isLocationMonitoring(),
-        namePrivacy            = featureStep.isNamePrivacy(),
-        composeEnabled         = featureStep.isComposeEnabled(),
-        rageTapDetection       = featureStep.isRageTapDetection(),
+        applicationId              = environmentStep.getAppId(),
+        beaconUrl                  = environmentStep.getBeaconUrl(),
+        moduleCredentials          = environmentStep.getModuleCredentials(),
+        autoStartEnabled           = featureStep.isAutoStartEnabled(),
+        userOptIn                  = featureStep.isUserOptIn(),
+        autoInstrument             = featureStep.isAutoInstrument(),
+        pluginEnabled              = featureStep.isPluginEnabled(),
+        crashReporting             = featureStep.isCrashReporting(),
+        anrReporting               = featureStep.isAnrReporting(),
+        nativeCrashReporting       = featureStep.isNativeCrashReporting(),
+        hybridMonitoring           = featureStep.isHybridMonitoring(),
+        userActionsEnabled         = featureStep.isUserActionsEnabled(),
+        webRequestsEnabled         = featureStep.isWebRequestsEnabled(),
+        lifecycleEnabled           = featureStep.isLifecycleEnabled(),
+        locationMonitoring         = featureStep.isLocationMonitoring(),
+        namePrivacy                = featureStep.isNamePrivacy(),
+        composeEnabled             = featureStep.isComposeEnabled(),
+        rageTapDetection           = featureStep.isRageTapDetection(),
         agentBehaviorLoadBalancing = featureStep.isAgentBehaviorLoadBalancing(),
-        agentBehaviorGrail     = featureStep.isAgentBehaviorGrail(),
-        sessionReplayEnabled   = featureStep.isSessionReplayEnabled(),
-        agentLogging           = featureStep.isAgentLogging(),
-        excludePackages        = featureStep.getExcludePackages(),
-        excludeClasses         = featureStep.getExcludeClasses(),
-        excludeMethods         = featureStep.getExcludeMethods(),
-        buildVariant           = featureStep.getBuildVariant(),
-        strictMode             = featureStep.isStrictMode()
+        agentBehaviorGrail         = featureStep.isAgentBehaviorGrail(),
+        sessionReplayEnabled       = featureStep.isSessionReplayEnabled(),
+        agentLogging               = featureStep.isAgentLogging(),
+        excludePackages            = featureStep.getExcludePackages(),
+        excludeClasses             = featureStep.getExcludeClasses(),
+        excludeMethods             = featureStep.getExcludeMethods(),
+        buildVariant               = featureStep.getBuildVariant(),
+        strictMode                 = featureStep.isStrictMode()
     )
 
     private fun buildSkillsConfig(): SkillsExportConfig = skillsStep.buildConfig()
 
     private fun applyChanges(config: DynatraceConfig) {
         try {
-            val effective = getEffectiveProjectInfo()
+            val effective    = getEffectiveProjectInfo()
             val skillsConfig = buildSkillsConfig()
             var exportedSkillPath: String? = null
 
             effective.settingsFile?.let { gradleService.ensureMavenCentral(it, effective.isKotlinDsl) }
                 ?: effective.projectBuildFile?.let { gradleService.ensureMavenCentral(it, effective.isKotlinDsl) }
 
-            // Remove Dynatrace from modules the user deselected (per-module MULTI_APP only).
-            // Must happen BEFORE configureGradleFiles so the root buildscript classpath check
-            // isn't confused by stale declarations left in deselected module files.
             computeDeselectedModules(effective).forEach { module ->
                 gradleService.removeModuleInstrumentation(module.buildFile)
             }
-
             gradleService.configureGradleFiles(effective, config)
 
-            // Optional: add OneAgent SDK to library modules whose code needs Dynatrace APIs.
-            // The SDK is injected via a subprojects{} block in the ROOT build file using
-            // pluginManager.withPlugin("com.android.library") + agentDependency().
             val sdkModules = moduleSelectionStep.getLibraryModulesForSdk()
             if (sdkModules.isNotEmpty()) {
                 val projectFile = effective.projectBuildFile ?: effective.appBuildFile
                 projectFile?.let {
                     gradleService.addOneAgentSdkToProjectBuild(
-                        it,
-                        effective.isKotlinDsl,
+                        it, effective.isKotlinDsl,
                         sdkModules.map { m -> m.name },
                         projectInfo.libraryModules.map { m -> m.name }
                     )
@@ -411,17 +443,16 @@ class DynatraceWizardDialog(
 
             if (skillsConfig.exportSkillFile) {
                 exportedSkillPath = skillsExportService.writeSkillsFile(
-                    effective,
-                    config,
-                    skillsConfig,
-                    sdkModules,
+                    effective, config, skillsConfig, sdkModules,
                     computeDeselectedModules(effective)
                 )
             }
 
             showNotification(
                 "Dynatrace configuration applied successfully!\n" +
-                (exportedSkillPath?.let { "AI skill files (5) exported to: ${it.substringBeforeLast("/")}/\n" } ?: "") +
+                (exportedSkillPath?.let {
+                    "AI skill files (5) exported to: ${it.substringBeforeLast("/")}/\n"
+                } ?: "") +
                 "Sync your Gradle project to activate the changes.",
                 NotificationType.INFORMATION
             )

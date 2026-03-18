@@ -115,12 +115,33 @@ class EnvironmentConfigStep {
                 }
             )
             .addComponent(
-                JBLabel(
-                    "<html>Enter your Dynatrace credentials. Find them in the Dynatrace portal " +
-                    "under <b>Mobile → (your app) → Settings → Instrumentation</b>.</html>"
-                ).apply {
+                JBLabel("Enter your Application ID and Beacon URL from the Dynatrace portal.").apply {
                     foreground = UIUtil.getContextHelpForeground()
+                    border = JBUI.Borders.emptyBottom(3)
+                }
+            )
+            .addComponent(
+                JBLabel(
+                    "<html><b>Already have a mobile app:</b> Dynatrace portal → " +
+                    "Mobile → (your app) → Settings → Instrumentation</html>"
+                ).apply {
+                    font = JBUI.Fonts.smallFont()
+                    foreground = UIUtil.getContextHelpForeground()
+                    border = JBUI.Borders.empty(0, 0, 2, 0)
+                }
+            )
+            .addComponent(
+                JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0)).apply {
+                    isOpaque = false
                     border = JBUI.Borders.emptyBottom(4)
+                    add(JBLabel("New to Dynatrace?  ").apply {
+                        font = JBUI.Fonts.smallFont()
+                        foreground = UIUtil.getContextHelpForeground()
+                    })
+                    add(DocumentationLinks.createLinkLabel(
+                        "Create your first mobile app →",
+                        DocumentationLinks.CREATE_MOBILE_APP
+                    ).also { (it as? JBLabel)?.font = JBUI.Fonts.smallFont() })
                 }
             )
             .addComponent(modeSummaryLabel)
