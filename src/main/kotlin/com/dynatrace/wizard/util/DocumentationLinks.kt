@@ -18,6 +18,14 @@ object DocumentationLinks {
 
     // BASE itself is the getting-started / overview page — do NOT append the slug again
     const val GETTING_STARTED         = BASE
+
+    /**
+     * Landing page for first-time Android setup — covers creating a new mobile application
+     * in the Dynatrace portal and obtaining the Application ID + Beacon URL.
+     * Shown on the Environment tab for users who don't have a Dynatrace mobile app yet.
+     */
+    const val CREATE_MOBILE_APP =
+        "https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications/instrument-android-app"
     const val GRADLE_PLUGIN           = BASE
     const val BEACON_URL              = BASE
 

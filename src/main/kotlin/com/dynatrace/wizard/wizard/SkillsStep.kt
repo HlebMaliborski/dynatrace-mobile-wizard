@@ -27,6 +27,10 @@ import javax.swing.event.DocumentEvent
 /**
  * Dedicated wizard step for exporting reusable AI skill files.
  *
+ * The tab defaults to a single opt-in checkbox with a plain-English explanation.
+ * All configuration fields are hidden inside [detailsPanel] and only revealed
+ * after the user checks "Export AI skill file".
+ *
  * @param project  the IntelliJ [Project] used for file-system detection; may be null in tests.
  */
 class SkillsStep(private val project: Project? = null) {
@@ -40,6 +44,12 @@ class SkillsStep(private val project: Project? = null) {
     private var isPathUserEdited = false
     /** True only during the first [createPanel] call; gates the initial auto-check on detection. */
     private var initialLoad = true
+
+    /**
+     * Holds all configuration rows (client, scope, path, detection status).
+     * Hidden by default; revealed when [exportSkillFileCheckBox] is checked.
+     */
+    private lateinit var detailsPanel: JPanel
 
     private val resetPathButton = JButton("\u21ba Reset").apply {
         toolTipText = "Reset to the default path for the selected client and scope"
@@ -82,33 +92,11 @@ class SkillsStep(private val project: Project? = null) {
             add(resetPathButton, BorderLayout.EAST)
         }
 
-        val panel = FormBuilder.createFormBuilder()
-            .addComponent(JBLabel("AI skills").apply {
-                font = JBUI.Fonts.label(16f).asBold()
-                foreground = WizardColors.accent
-                border = JBUI.Borders.emptyBottom(2)
-            })
-            .addComponent(JBLabel("Export a reusable skill file that other AI coding agents can install and reuse.").apply {
-                foreground = UIUtil.getContextHelpForeground()
-                border = JBUI.Borders.emptyBottom(4)
-            })
-            .addComponent(TitledSeparator("Skill Export"))
-            .addComponent(JPanel(BorderLayout()).apply {
-                isOpaque = false
-                add(exportSkillFileCheckBox, BorderLayout.NORTH)
-                add(JBLabel(
-                    "<html>Exports a reusable AI skill set. Generates <b>5 files</b> into the same directory: " +
-                    "<code>skills.md</code> (project-specific index with credentials and config) plus " +
-                    "<code>setup.md</code>, <code>sdk-apis.md</code>, <code>monitoring.md</code>, and " +
-                    "<code>troubleshooting.md</code> (static reference files).</html>"
-                ).apply {
-                    font = JBUI.Fonts.smallFont()
-                    foreground = UIUtil.getContextHelpForeground()
-                    border = JBUI.Borders.empty(1, JBUI.scale(20), 4, 0)
-                }, BorderLayout.CENTER)
-            })
+        // ── Collapsible details panel (hidden until checkbox is checked) ───
+        detailsPanel = FormBuilder.createFormBuilder()
             .addLabeledComponent(JBLabel("Target client:"),
-                fieldWithHint(skillClientComboBox, "Choose where the exported skill should be installed."), true)
+                fieldWithHint(skillClientComboBox,
+                    "Choose where the exported skill should be installed."), true)
             .addVerticalGap(4)
             .addLabeledComponent(JBLabel("Install scope:"),
                 fieldWithHint(skillInstallScopeComboBox,
@@ -122,6 +110,38 @@ class SkillsStep(private val project: Project? = null) {
             .addComponent(TitledSeparator("Detected Skills"))
             .addComponent(detectionStatusLabel)
             .addVerticalGap(6)
+            .panel
+            .also { it.isOpaque = false; it.border = JBUI.Borders.emptyTop(8) }
+
+        // ── Checkbox + plain-English description (always visible) ─────────
+        val checkboxPanel = JPanel(BorderLayout()).apply {
+            isOpaque = false
+            add(exportSkillFileCheckBox, BorderLayout.NORTH)
+            add(JBLabel(
+                "<html>If you use an AI coding assistant (GitHub Copilot, Claude, Cursor, etc.), " +
+                "checking this option exports documentation files that teach your assistant about " +
+                "the Dynatrace SDK — so it can suggest the right APIs without extra prompting. " +
+                "<b>Skip this if you don't use AI coding tools.</b></html>"
+            ).apply {
+                font = JBUI.Fonts.smallFont()
+                foreground = UIUtil.getContextHelpForeground()
+                border = JBUI.Borders.empty(1, JBUI.scale(20), 4, 0)
+            }, BorderLayout.CENTER)
+        }
+
+        val panel = FormBuilder.createFormBuilder()
+            .addComponent(JBLabel("AI skills").apply {
+                font = JBUI.Fonts.label(16f).asBold()
+                foreground = WizardColors.accent
+                border = JBUI.Borders.emptyBottom(2)
+            })
+            .addComponent(JBLabel("Optional: help your AI coding assistant understand the Dynatrace SDK.").apply {
+                foreground = UIUtil.getContextHelpForeground()
+                border = JBUI.Borders.emptyBottom(4)
+            })
+            .addComponent(TitledSeparator("Skill Export"))
+            .addComponent(checkboxPanel)
+            .addComponent(detailsPanel)
             .addComponent(TitledSeparator("Documentation"))
             .addComponent(DocumentationLinks.createLinkLabel(
                 "Configure Plugin for Instrumentation", DocumentationLinks.CONFIGURE_PLUGIN))
@@ -132,7 +152,7 @@ class SkillsStep(private val project: Project? = null) {
             .also { it.border = JBUI.Borders.empty(8, 12, 12, 12) }
 
         syncSkillExportPath()   // sets path + install-locations label + initial detection
-        syncAvailability()
+        syncAvailability()      // hides detailsPanel on first load (unless auto-checked)
         initialLoad = false
         return panel
     }
@@ -200,7 +220,6 @@ class SkillsStep(private val project: Project? = null) {
         )
         val result = SkillsExportService(project).detectExistingSkills(info, config)
 
-        // One-line context shown in every state: "Claude Code · Project-level · path/"
         val context = "<span style='color:gray'>${client.label} &middot; ${scope.label}" +
                       " &middot; <code>${result.directory}/</code></span>"
 
@@ -237,11 +256,19 @@ class SkillsStep(private val project: Project? = null) {
 
     private fun syncAvailability() {
         val enabled = exportSkillFileCheckBox.isSelected
-        skillClientComboBox.isEnabled        = enabled
-        skillInstallScopeComboBox.isEnabled   = enabled
-        skillFilePathField.isEnabled          = enabled
-        resetPathButton.isEnabled             = enabled
-        skillInstallLocationsLabel.isEnabled  = enabled
+
+        // Show or hide the entire details block based on the checkbox state.
+        if (::detailsPanel.isInitialized) {
+            detailsPanel.isVisible = enabled
+            detailsPanel.parent?.revalidate()
+            detailsPanel.parent?.repaint()
+        }
+
+        skillClientComboBox.isEnabled       = enabled
+        skillInstallScopeComboBox.isEnabled  = enabled
+        skillFilePathField.isEnabled         = enabled
+        resetPathButton.isEnabled            = enabled
+        skillInstallLocationsLabel.isEnabled = enabled
     }
 
     fun shouldExportSkillFile(): Boolean = exportSkillFileCheckBox.isSelected
