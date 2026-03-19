@@ -12,7 +12,7 @@ configuration for Android projects through a guided, multi-step wizard dialog ti
 
 ![Modules tab](docs/screenshots/wizard/02-modules.png)
 
-![Environment tab](docs/screenshots/wizard/03-environment.png)
+![Environment tab](docs/screenshots/wizard/04-technologies.png)
 
 ![Technologies tab](docs/screenshots/wizard/04-technologies.png)
 
