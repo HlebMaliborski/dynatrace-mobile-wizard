@@ -2,6 +2,7 @@ plugins {
     id("java")
     id("org.jetbrains.kotlin.jvm") version "1.9.25"
     id("org.jetbrains.intellij") version "1.17.4"
+    id("org.jetbrains.changelog") version "2.2.0"
 }
 
 group = providers.gradleProperty("pluginGroup").get()
@@ -27,6 +28,12 @@ intellij {
         .split(",").map { it.trim() }.filter { it.isNotEmpty() }
 }
 
+changelog {
+    version.set(providers.gradleProperty("pluginVersion").get())
+    groups.set(listOf("Added", "Changed", "Fixed", "Removed"))
+    repositoryUrl.set("https://github.com/HlebMaliborski/dynatrace-mobile-wizard")
+}
+
 tasks {
     processResources {
         // docs/skills/ is the single source of truth for the bundled skill Markdown files.
@@ -39,7 +46,13 @@ tasks {
 
     patchPluginXml {
         sinceBuild = providers.gradleProperty("pluginSinceBuild").get()
-        untilBuild.set("")  // ← Add this line to remove upper bound
+        untilBuild.set("")
+        changeNotes.set(provider {
+            changelog.renderItem(
+                changelog.getLatest(),
+                org.jetbrains.changelog.Changelog.OutputType.HTML
+            )
+        })
     }
 
     wrapper {

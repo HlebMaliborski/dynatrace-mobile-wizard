@@ -15,15 +15,15 @@ configuration for Android projects through a guided, multi-step wizard dialog ti
 
 ---
 
-### Wizard Steps
+### Preview
 
 ![Welcome tab](docs/screenshots/wizard/01-welcome.png)
 
 ![Modules tab](docs/screenshots/wizard/02-modules.png)
 
-![Environment tab](docs/screenshots/wizard/04-technologies.png)
-
 ![Technologies tab](docs/screenshots/wizard/04-technologies.png)
+
+![Environment tab](docs/screenshots/wizard/03-environment.png)
 
 ![Features tab](docs/screenshots/wizard/05-features.png)
 
