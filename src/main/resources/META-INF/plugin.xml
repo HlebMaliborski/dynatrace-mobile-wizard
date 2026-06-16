@@ -5,18 +5,17 @@
 
     <description><![CDATA[
         <p>
-            <em>⚠️ <b>Independent community tool.</b> This plugin is created privately by Hleb Maliborski
-            and is not developed by, affiliated with, endorsed by, or supported by Dynatrace GmbH.
-            "Dynatrace" is a registered trademark of Dynatrace GmbH, referenced here solely to identify
-            the third-party SDK this tool configures.</em>
-        </p>
-        <p>
             <b>Dynatrace Mobile Wizard</b> is a guided setup tool for Android developers that automatically
             configures the <b>Dynatrace OneAgent Mobile SDK</b> in your project — no manual Gradle editing required.
         </p>
         <p>
             Open it from <b>Tools → Dynatrace Wizard…</b>, right-click in the editor, or right-click in
             the Project view. The wizard detects your project structure and walks you through every step.
+        </p>
+        <p>
+            <em>Note: this is an independent, community-created tool and is not developed by, affiliated with,
+            endorsed by, or supported by Dynatrace GmbH. "Dynatrace" is a registered trademark of Dynatrace GmbH,
+            referenced here solely to identify the third-party SDK this tool configures.</em>
         </p>
 
         <h3>What it does</h3>
