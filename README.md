@@ -1,5 +1,14 @@
 # Dynatrace Wizard
 
+> **⚠️ Independent community tool — not affiliated with Dynatrace GmbH**
+>
+> This plugin is created **privately** by [Hleb Maliborski](https://github.com/HlebMaliborski) and is **not**
+> developed by, affiliated with, endorsed by, sponsored by, or in any way officially connected to
+> **Dynatrace GmbH** or any of its subsidiaries, products, or services.
+> "Dynatrace" is a registered trademark of Dynatrace GmbH, referenced here solely to identify
+> the third-party SDK this tool configures. This is a community tool provided under the
+> [Apache License 2.0](LICENSE).
+
 An **Android Studio / IntelliJ IDEA** plugin that
 simplifies [Dynatrace Mobile SDK](https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications/instrument-android-app/instrumentation-via-plugin)
 configuration for Android projects through a guided, multi-step wizard dialog titled **"Configure Dynatrace Mobile SDK"**.
@@ -376,8 +385,13 @@ Contributions are welcome! Please:
 
 ## License
 
+Copyright 2026 Hleb Maliborski — created in a personal capacity.
+
 This project is licensed under the **Apache License 2.0**.  
-See [LICENSE](LICENSE) for details.
+See [LICENSE](LICENSE) for details and [NOTICE](NOTICE) for third-party trademark and dependency notices.
+
+> This project is **not** affiliated with, endorsed by, or supported by Dynatrace GmbH.  
+> "Dynatrace" is a registered trademark of Dynatrace GmbH.
 
 ---
 

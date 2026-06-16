@@ -1,9 +1,15 @@
 <idea-plugin>
-    <id>com.dynatrace.wizard</id>
+    <id>io.github.hlebmaliborski.dynatracemobilewizard</id>
     <name>Dynatrace Mobile Wizard</name>
-    <vendor email="android-support@dynatrace.com" url="https://www.dynatrace.com">Dynatrace</vendor>
+    <vendor url="https://github.com/HlebMaliborski/dynatrace-mobile-wizard">Hleb Maliborski</vendor>
 
     <description><![CDATA[
+        <p>
+            <em>⚠️ <b>Independent community tool.</b> This plugin is created privately by Hleb Maliborski
+            and is not developed by, affiliated with, endorsed by, or supported by Dynatrace GmbH.
+            "Dynatrace" is a registered trademark of Dynatrace GmbH, referenced here solely to identify
+            the third-party SDK this tool configures.</em>
+        </p>
         <p>
             <b>Dynatrace Mobile Wizard</b> is a guided setup tool for Android developers that automatically
             configures the <b>Dynatrace OneAgent Mobile SDK</b> in your project — no manual Gradle editing required.
@@ -39,12 +45,12 @@
         <h3>Wizard tabs</h3>
         <ol>
             <li><b>Welcome</b> — detects Android project, DSL, module structure, and setup flow</li>
-            <li><b>Modules</b> — select which app modules to instrument; configure approach for multi-app projects</li>
-            <li><b>Environment</b> — enter Application ID and Beacon URL (per-module for multi-app)</li>
+            <li><b>Modules</b> — select which app modules to instrument; configure approach for multi-app projects (shown only for multi-app / library-module projects)</li>
             <li><b>Technologies</b> — version compatibility check; warns about competing instrumentation plugins</li>
-            <li><b>Features</b> — enable/disable individual instrumentation capabilities</li>
-            <li><b>Skills</b> — export a reusable Markdown <code>skills.md</code> for AI coding agents</li>
-            <li><b>Summary</b> — full Gradle code preview; click Finish to apply</li>
+            <li><b>Environment</b> — enter Application ID and Beacon URL (per-module for multi-app)</li>
+            <li><b>Features</b> — enable/disable individual instrumentation capabilities; Recommended view by default; Advanced toggle reveals 12 more options</li>
+            <li><b>Skills</b> — opt-in export of a reusable Markdown skill set for AI coding agents (collapsed by default)</li>
+            <li><b>Summary</b> — diff-style per-file change cards; click Finish to apply</li>
         </ol>
 
         <h3>Supported project types</h3>
@@ -57,7 +63,7 @@
 
         <h3>Requirements</h3>
         <ul>
-            <li>IntelliJ IDEA 2024.1+ or Android Studio Koala+</li>
+            <li>IntelliJ IDEA 2024.1+ or Android Studio Meerkat (2025.1)+</li>
             <li>An Android project with at least one <code>com.android.application</code> module</li>
             <li>A Dynatrace account with a configured Mobile application (Application ID + Beacon URL)</li>
         </ul>

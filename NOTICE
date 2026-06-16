@@ -1,0 +1,44 @@
+Dynatrace Mobile Wizard
+Copyright 2026 Hleb Maliborski
+
+Licensed under the Apache License, Version 2.0.
+See the LICENSE file for the full license text.
+
+========================================================================
+IMPORTANT — THIRD-PARTY TRADEMARK NOTICE
+========================================================================
+
+This software is an INDEPENDENT, COMMUNITY-CREATED tool created by
+Hleb Maliborski in a personal capacity.
+
+It is NOT developed by, affiliated with, endorsed by, sponsored by,
+or in any way officially connected to Dynatrace GmbH or any of its
+subsidiaries, products, or services.
+
+"Dynatrace" is a registered trademark of Dynatrace GmbH.
+All Dynatrace product names, logos, and brands are the exclusive
+property of their respective owners and are referenced here solely
+for descriptive purposes — to identify the third-party SDK that this
+tool configures.
+
+========================================================================
+THIRD-PARTY DEPENDENCIES
+========================================================================
+
+This software includes the following open-source dependencies,
+each governed by its own license:
+
+  IntelliJ Platform SDK
+  Copyright 2000–2024 JetBrains s.r.o.
+  Apache License 2.0 — https://www.apache.org/licenses/LICENSE-2.0
+
+  JUnit 4 (test only)
+  Copyright © 2002–2024 JUnit contributors
+  Eclipse Public License 1.0 — https://www.eclipse.org/legal/epl-v10.html
+
+  Mockito (test only)
+  Copyright © 2007–2024 Mockito contributors
+  MIT License — https://opensource.org/licenses/MIT
+
+========================================================================
+
