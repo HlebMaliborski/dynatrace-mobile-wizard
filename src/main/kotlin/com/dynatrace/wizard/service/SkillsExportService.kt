@@ -263,6 +263,13 @@ Selected: ${nameList.joinToString()}
             append("| Dynatrace already configured | ${if (projectInfo.appModules.any { it.hasDynatrace }) "Yes — update mode" else "No — fresh setup"} |")
         }
 
+        // Multi-app projects using the per-module (buildscript classpath) approach are the ONE
+        // legitimate case where the plugin — the `.module` variant — is applied in each app
+        // module rather than the root. Every other buildscript-classpath case (single-app,
+        // feature-modules) must apply the plugin in the root file per Dynatrace's docs.
+        val isMultiAppPerModule = !usesPluginDsl &&
+                projectInfo.setupFlow == ProjectDetectionService.SetupFlow.MULTI_APP
+
         val pluginApplySection = if (usesPluginDsl) """
 **This project uses Plugin DSL.** Add to the root `build.gradle${if (isKts) ".kts" else ""}`:
 
@@ -277,6 +284,47 @@ plugins {
 }
 ```"""
         }
+""" else if (isMultiAppPerModule) """
+**This project uses Buildscript Classpath (per-module).** Add to the root `build.gradle${if (isKts) ".kts" else ""}`:
+
+${
+            if (isKts) """```kotlin
+buildscript {
+    repositories { mavenCentral(); google() }
+    dependencies {
+        classpath("com.dynatrace.tools.android:gradle-plugin:8.+")
+    }
+}
+```
+
+Then, in **each app module** `build.gradle.kts`:
+```kotlin
+plugins {
+    id("com.android.application")
+    id("com.dynatrace.instrumentation.module") // no version — inherited from root classpath
+}
+```""" else """```groovy
+buildscript {
+    repositories { mavenCentral(); google() }
+    dependencies {
+        classpath 'com.dynatrace.tools.android:gradle-plugin:8.+'
+    }
+}
+```
+
+Then, in **each app module** `build.gradle`:
+```groovy
+plugins {
+    id 'com.android.application'
+    id 'com.dynatrace.instrumentation.module'
+}
+```"""
+        }
+
+> Multi-app per-module setups apply `com.dynatrace.instrumentation.module` (no version — it's
+> inherited from the root classpath entry) in **every** app module, each with its own
+> `dynatrace {}` block and credentials — unlike the single-app case, where the plugin and the
+> `dynatrace {}` block both stay in the root file.
 """ else """
 **This project uses Buildscript Classpath.** Add to the root `build.gradle${if (isKts) ".kts" else ""}`:
 
@@ -290,7 +338,7 @@ buildscript {
 }
 ```
 
-Then in each app module `build.gradle.kts`:
+Then, in this same top-level file (after the `buildscript {}` block):
 ```kotlin
 apply(plugin = "com.dynatrace.instrumentation")
 ```""" else """```groovy
@@ -302,11 +350,14 @@ buildscript {
 }
 ```
 
-Then in each app module `build.gradle`:
+Then, in this same top-level file (after the `buildscript {}` block):
 ```groovy
 apply plugin: 'com.dynatrace.instrumentation'
 ```"""
         }
+
+> ⚠️ Do not apply the plugin in the app module — Dynatrace's documentation requires it in
+> the top-level build file so the plugin can properly configure the Android subprojects.
 """
 
         return """
@@ -370,7 +421,13 @@ $manualStartupSection
 | Property | Value |
 | --- | --- |
 | Setup flow | `${projectInfo.setupFlow.title}` |
-| Instrumentation approach | `${if (usesPluginDsl) "Plugin DSL at root" else "Buildscript classpath + per-module plugin"}` |
+| Instrumentation approach | `${
+            when {
+                usesPluginDsl -> "Plugin DSL at root"
+                isMultiAppPerModule -> "Buildscript classpath + per-module plugin"
+                else -> "Buildscript classpath at root"
+            }
+        }` |
 | Android DSL | `${if (isKts) "Kotlin DSL (.kts)" else "Groovy DSL"}` |
 | Application modules | ${selectedAppModules.joinToString()} |
 | Dynamic feature modules | ${if (featureModules.isEmpty()) "None" else featureModules.joinToString()} |

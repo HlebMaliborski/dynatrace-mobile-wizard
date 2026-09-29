@@ -17,8 +17,13 @@ import java.nio.charset.StandardCharsets
  *      → plugin declaration + dynatrace {} block both go into the **project-level** file.
  *        The plugin must NOT be applied in a module-level file (enforced by the Dynatrace plugin itself).
  *  - Buildscript classpath path (no top-level `plugins {}` block):
- *      → classpath entry goes into the project-level buildscript block;
- *        `apply plugin` + dynatrace {} block go into the **app-level** file.
+ *      → classpath entry, `apply plugin`, AND the dynatrace {} block all go into the
+ *        **project-level (top-level)** file — never the app module.
+ *        Per Dynatrace's own documentation: "You should apply the Dynatrace Android
+ *        Gradle plugin to the top-level build file ... This approach allows the plugin
+ *        to properly configure the Android subprojects and establish the
+ *        auto-instrumentation process." See:
+ *        https://docs.dynatrace.com/docs/observe/digital-experience/mobile-applications/instrument-android-app/instrumentation-via-plugin
  */
 class GradleModificationService(private val project: Project?) {
 
@@ -229,16 +234,22 @@ class GradleModificationService(private val project: Project?) {
             })
         } else {
             // ── Buildscript classpath path ───────────────────────────────────
-            // Classpath entry in project-level buildscript; apply + config in app module.
-            projectBuildFile?.let { addClasspathToProjectBuild(it, isKotlinDsl) }
-            appBuildFile?.let { addDynatraceToAppBuild(it, isKotlinDsl, config) }
+            // Classpath entry, apply plugin, AND the dynatrace {} block all go into the
+            // project-level (top-level) file — see the class-level KDoc for why. The
+            // appBuildFile parameter is intentionally unused here; it is only relevant
+            // to callers that still need it for other purposes (e.g. multi-app per-module).
+            projectBuildFile?.let {
+                addClasspathToProjectBuild(it, isKotlinDsl)
+                addDynatraceToProjectBuild(it, isKotlinDsl, config)
+            }
         }
     }
 
     /**
      * Flow-aware overload: reads [ProjectInfo.setupFlow] and routes accordingly.
      *  - SINGLE_APP / SINGLE_BUILD_FILE / UNKNOWN → standard single-file logic above
-     *  - FEATURE_MODULES → plugin at root + shared dynatrace-common file + apply from in each module
+     *  - FEATURE_MODULES → same standard single-file logic (plugin + dynatrace {} block both
+     *    go to the root file); dynamic feature/library modules need no changes at all
      *  - MULTI_APP → classpath at root + com.dynatrace.instrumentation.module in each app module
      */
     fun configureGradleFiles(projectInfo: ProjectDetectionService.ProjectInfo, config: DynatraceConfig) {
@@ -259,8 +270,8 @@ class GradleModificationService(private val project: Project?) {
     /**
      * Feature-module setup per Dynatrace documentation:
      *  - Plugin applied at the **project root** (Plugin DSL or classpath path).
-     *  - `dynatrace {}` config block goes into the root build file (Plugin DSL)
-     *    or into the base app module (buildscript path).
+     *  - `dynatrace {}` config block also goes into the root build file, regardless of
+     *    Plugin DSL vs. buildscript classpath — never the base app module.
      *  - Dynamic feature modules and library modules require **no changes** —
      *    they are instrumented automatically by the Gradle plugin.
      */
@@ -274,61 +285,6 @@ class GradleModificationService(private val project: Project?) {
             projectInfo.isKotlinDsl,
             config
         )
-    }
-
-    /** Adds only the plugin declaration (no dynatrace block) to the project build file. */
-    private fun addPluginDeclarationOnly(file: VirtualFile, isKts: Boolean) {
-        WriteCommandAction.runWriteCommandAction(project, "Add Dynatrace Plugin Declaration", null, {
-            val content = String(file.contentsToByteArray(), StandardCharsets.UTF_8)
-            if (content.contains(DYNATRACE_PLUGIN_ID) || content.contains(DYNATRACE_MAVEN_ARTIFACT)) return@runWriteCommandAction
-            val modified = if (PLUGINS_BLOCK_REGEX.containsMatchIn(content)) {
-                val pluginLine = if (isKts)
-                    """    id("$DYNATRACE_PLUGIN_ID") version "$DYNATRACE_PLUGIN_VERSION""""
-                else
-                    """    id '$DYNATRACE_PLUGIN_ID' version '$DYNATRACE_PLUGIN_VERSION'"""
-                PLUGINS_BLOCK_REGEX.replaceFirst(content, "$1\n$pluginLine")
-            } else {
-                if (isKts) addClasspathKts(content) else addClasspathGroovy(content)
-            }
-            if (modified != content) file.setBinaryContent(modified.toByteArray(StandardCharsets.UTF_8))
-        })
-    }
-
-    /**
-     * Creates `dynatrace-common.gradle[.kts]` in [dir] containing only the dynatrace {} block.
-     * Returns the created (or existing) VirtualFile.
-     */
-    fun createSharedDynatraceFile(
-        dir: VirtualFile,
-        fileName: String,
-        isKts: Boolean,
-        config: DynatraceConfig
-    ): VirtualFile {
-        val existing = dir.findChild(fileName)
-        val block = if (isKts) buildDynatraceBlockKts(config) else buildDynatraceBlockGroovy(config)
-        val header = if (isKts)
-            "// Shared Dynatrace configuration — applied by base and feature modules\n\n"
-        else
-            "// Shared Dynatrace configuration — applied by base and feature modules\n\n"
-        val content = (header + block).toByteArray(StandardCharsets.UTF_8)
-
-        var result: VirtualFile? = existing
-        WriteCommandAction.runWriteCommandAction(project, "Create Shared Dynatrace Config", null, {
-            result = existing ?: dir.createChildData(this, fileName)
-            result!!.setBinaryContent(content)
-        })
-        return result!!
-    }
-
-    /** Adds `apply from: 'fileName'` (or `apply(from = "...")`) to a module build file. */
-    fun applyFromSharedFile(moduleFile: VirtualFile, sharedFileName: String, isKts: Boolean) {
-        WriteCommandAction.runWriteCommandAction(project, "Apply Shared Dynatrace Config", null, {
-            val content = String(moduleFile.contentsToByteArray(), StandardCharsets.UTF_8)
-            if (content.contains(sharedFileName)) return@runWriteCommandAction
-            val applyLine = if (isKts) "\napply(from = \"../$sharedFileName\")\n"
-            else "\napply from: '../$sharedFileName'\n"
-            moduleFile.setBinaryContent((content.trimEnd() + applyLine).toByteArray(StandardCharsets.UTF_8))
-        })
     }
 
     // ── Multi-app flow ────────────────────────────────────────────────────────
@@ -1030,14 +986,21 @@ class GradleModificationService(private val project: Project?) {
         })
     }
 
-    /** Adds `apply plugin` + dynatrace {} to the app-level build file (buildscript path only). */
-    private fun addDynatraceToAppBuild(file: VirtualFile, isKotlinDsl: Boolean, config: DynatraceConfig) {
-        WriteCommandAction.runWriteCommandAction(project, "Configure Dynatrace in App Module", null, {
+    /**
+     * Adds `apply plugin` + the `dynatrace {}` block to the project-level (top-level) build
+     * file — the buildscript-classpath counterpart of [applyPluginDslGroovy]/[applyPluginDslKts].
+     *
+     * Per Dynatrace's documentation, the plugin must be applied to the top-level build file
+     * even when using the legacy buildscript-classpath approach, so this writes to the SAME
+     * file that just received the classpath entry — never the app module.
+     */
+    private fun addDynatraceToProjectBuild(file: VirtualFile, isKotlinDsl: Boolean, config: DynatraceConfig) {
+        WriteCommandAction.runWriteCommandAction(project, "Configure Dynatrace Plugin", null, {
             val content = String(file.contentsToByteArray(), StandardCharsets.UTF_8)
             val modified = if (isKotlinDsl) {
-                addToAppBuildKts(content, config)
+                addApplyAndDynatraceToProjectKts(content, config)
             } else {
-                addToAppBuildGroovy(content, config)
+                addApplyAndDynatraceToProjectGroovy(content, config)
             }
             if (modified != content) {
                 file.setBinaryContent(modified.toByteArray(StandardCharsets.UTF_8))
@@ -1045,11 +1008,56 @@ class GradleModificationService(private val project: Project?) {
         })
     }
 
+    /**
+     * Finds the `dependencies {` sub-block inside the first top-level `buildscript { ... }`
+     * block in [content], using brace-depth counting rather than a single-line regex.
+     *
+     * A naive regex like `buildscript\s*\{[^}]*dependencies\s*\{` cannot cross the closing
+     * `}` of any sibling block declared before `dependencies {}` (most commonly
+     * `repositories { ... }`), because `[^}]*` excludes `}` entirely. When a legacy build
+     * file declares `repositories {}` before `dependencies {}` inside `buildscript {}` —
+     * the standard Android template layout — that regex fails to match even though the
+     * dependencies block clearly exists, causing callers to (incorrectly) conclude no
+     * buildscript/dependencies block is present and fall back to prepending a brand-new,
+     * duplicate `buildscript {}` block instead of inserting into the existing one.
+     *
+     * Returns the character offset immediately after the `dependencies {` opening brace,
+     * or `null` if no `buildscript { … dependencies { … } … }` structure is found.
+     */
+    private fun findBuildscriptDependenciesInsertionPoint(content: String): Int? {
+        val buildscriptMatch = Regex("""buildscript\s*\{""").find(stripComments(content)) ?: return null
+        val buildscriptOpen = content.indexOf('{', buildscriptMatch.range.first)
+        if (buildscriptOpen == -1) return null
+
+        var depth = 0
+        var buildscriptEnd = -1
+        for (i in buildscriptOpen until content.length) {
+            when (content[i]) {
+                '{' -> depth++
+                '}' -> {
+                    depth--; if (depth == 0) {
+                        buildscriptEnd = i; break
+                    }
+                }
+            }
+        }
+        if (buildscriptEnd == -1) return null
+
+        val body = content.substring(buildscriptOpen + 1, buildscriptEnd)
+        val depsMatch = Regex("""dependencies\s*\{""").find(stripComments(body)) ?: return null
+        val depsOpenInBody = body.indexOf('{', depsMatch.range.first)
+        if (depsOpenInBody == -1) return null
+
+        return buildscriptOpen + 1 + depsOpenInBody + 1
+    }
+
     internal fun addClasspathKts(content: String): String {
         val hasPluginsDsl = PLUGINS_BLOCK_REGEX.containsMatchIn(stripComments(content))
-        val depsRegex = Regex("""(buildscript\s*\{[^}]*dependencies\s*\{)""", RegexOption.DOT_MATCHES_ALL)
-        return if (depsRegex.containsMatchIn(content)) {
-            val withClasspath = depsRegex.replaceFirst(content, "$1\n        classpath(\"$DYNATRACE_CLASSPATH\")")
+        val insertAt = findBuildscriptDependenciesInsertionPoint(content)
+        return if (insertAt != null) {
+            val withClasspath = content.substring(0, insertAt) +
+                    "\n        classpath(\"$DYNATRACE_CLASSPATH\")" +
+                    content.substring(insertAt)
             // Repositories are managed by pluginManagement in settings.gradle for Plugin DSL projects.
             if (hasPluginsDsl) withClasspath else ensureBuildscriptRepositories(withClasspath, isKts = true)
         } else {
@@ -1082,9 +1090,11 @@ buildscript {
 
     internal fun addClasspathGroovy(content: String): String {
         val hasPluginsDsl = PLUGINS_BLOCK_REGEX.containsMatchIn(stripComments(content))
-        val depsRegex = Regex("""(buildscript\s*\{[^}]*dependencies\s*\{)""", RegexOption.DOT_MATCHES_ALL)
-        return if (depsRegex.containsMatchIn(content)) {
-            val withClasspath = depsRegex.replaceFirst(content, "$1\n        classpath '$DYNATRACE_CLASSPATH'")
+        val insertAt = findBuildscriptDependenciesInsertionPoint(content)
+        return if (insertAt != null) {
+            val withClasspath = content.substring(0, insertAt) +
+                    "\n        classpath '$DYNATRACE_CLASSPATH'" +
+                    content.substring(insertAt)
             if (hasPluginsDsl) withClasspath else ensureBuildscriptRepositories(withClasspath, isKts = false)
         } else {
             val newBlock = if (hasPluginsDsl) {
@@ -1200,30 +1210,80 @@ buildscript {
         return content.substring(0, insertAt) + additions + content.substring(insertAt)
     }
 
-    private fun addToAppBuildKts(content: String, config: DynatraceConfig): String {
+    /**
+     * Kotlin DSL: add `apply(plugin = "...")` + `dynatrace {}` to the project-level file
+     * for the buildscript-classpath approach. If a `plugins {}` block already exists for
+     * other plugins, the Dynatrace id is added there instead (no version — the classpath
+     * entry already supplies it). Otherwise the apply statement is inserted immediately
+     * after the (just-added) `buildscript {}` block — never prepended above it, since
+     * Gradle requires `buildscript {}` to be evaluated before any other script statement.
+     */
+    private fun addApplyAndDynatraceToProjectKts(content: String, config: DynatraceConfig): String {
         var result = content
-        if (!result.contains(DYNATRACE_PLUGIN_ID)) {
-            result = if (PLUGINS_BLOCK_REGEX.containsMatchIn(result)) {
+        if (!stripComments(result).contains(DYNATRACE_PLUGIN_ID)) {
+            result = if (PLUGINS_BLOCK_REGEX.containsMatchIn(stripComments(result))) {
                 PLUGINS_BLOCK_REGEX.replaceFirst(result, "$1\n    id(\"$DYNATRACE_PLUGIN_ID\")")
             } else {
-                """apply(plugin = "$DYNATRACE_PLUGIN_ID")""" + "\n\n" + result
+                insertApplyStatementAfterBuildscript(result, """apply(plugin = "$DYNATRACE_PLUGIN_ID")""")
             }
         }
         result = replaceDynatraceBlock(result, buildDynatraceBlockKts(config))
         return result
     }
 
-    private fun addToAppBuildGroovy(content: String, config: DynatraceConfig): String {
+    /** Groovy DSL counterpart of [addApplyAndDynatraceToProjectKts]. */
+    private fun addApplyAndDynatraceToProjectGroovy(content: String, config: DynatraceConfig): String {
         var result = content
-        if (!result.contains(DYNATRACE_PLUGIN_ID)) {
-            result = if (PLUGINS_BLOCK_REGEX.containsMatchIn(result)) {
+        if (!stripComments(result).contains(DYNATRACE_PLUGIN_ID)) {
+            result = if (PLUGINS_BLOCK_REGEX.containsMatchIn(stripComments(result))) {
                 PLUGINS_BLOCK_REGEX.replaceFirst(result, "$1\n    id '$DYNATRACE_PLUGIN_ID'")
             } else {
-                "apply plugin: '$DYNATRACE_PLUGIN_ID'\n\n" + result
+                insertApplyStatementAfterBuildscript(result, "apply plugin: '$DYNATRACE_PLUGIN_ID'")
             }
         }
         result = replaceDynatraceBlock(result, buildDynatraceBlockGroovy(config))
         return result
+    }
+
+    /**
+     * Inserts [applyLine] immediately after the LAST top-level `buildscript { ... }` block
+     * in [content], using brace-depth counting to find its closing `}`.
+     *
+     * Gradle requires `buildscript {}` to be evaluated before any other script statement,
+     * so an `apply plugin: ...` / `apply(plugin = ...)` line must never be placed above it.
+     * Some legacy templates declare more than one top-level `buildscript {}` block (e.g. one
+     * for the Dynatrace classpath and a separate pre-existing one for the Android Gradle
+     * plugin classpath) — in that case the apply statement is inserted after the last one so
+     * it always lands after every buildscript declaration.
+     *
+     * Falls back to prepending [applyLine] as a standalone statement when no `buildscript {}`
+     * block exists at all.
+     */
+    private fun insertApplyStatementAfterBuildscript(content: String, applyLine: String): String {
+        val matches = Regex("""buildscript\s*\{""").findAll(stripComments(content)).toList()
+        if (matches.isEmpty()) return applyLine + "\n\n" + content
+
+        val lastMatch = matches.last()
+        val openBraceIdx = content.indexOf('{', lastMatch.range.first)
+        if (openBraceIdx == -1) return applyLine + "\n\n" + content
+
+        var depth = 0
+        var blockEnd = -1
+        for (i in openBraceIdx until content.length) {
+            when (content[i]) {
+                '{' -> depth++
+                '}' -> {
+                    depth--; if (depth == 0) {
+                        blockEnd = i; break
+                    }
+                }
+            }
+        }
+        if (blockEnd == -1) return applyLine + "\n\n" + content
+
+        val before = content.substring(0, blockEnd + 1)
+        val after = content.substring(blockEnd + 1).trimStart('\n', '\r')
+        return "$before\n\n$applyLine\n" + after
     }
 
     /**
@@ -1478,14 +1538,10 @@ buildscript {
                             projectInfo.projectBuildFile?.let {
                                 appendLine("📄 ${it.path}")
                                 appendLine("  → Add classpath(\"$DYNATRACE_CLASSPATH\") to buildscript dependencies")
-                                appendLine()
-                            }
-                            projectInfo.appBuildFile?.let {
-                                appendLine("📄 ${it.path}")
-                                appendLine("  → Apply Dynatrace plugin ($DYNATRACE_PLUGIN_ID)")
+                                appendLine("  → Apply Dynatrace plugin ($DYNATRACE_PLUGIN_ID) in this same top-level file")
                                 appendLine("  → Add dynatrace {} configuration block:")
                                 appendLine()
-                                block.lines().forEach { appendLine("    $it") }
+                                block.lines().forEach { line -> appendLine("    $line") }
                             }
                         }
                     }
@@ -1624,11 +1680,7 @@ buildscript {
                             projectInfo.projectBuildFile?.let {
                                 appendLine("📄 ${it.path}")
                                 appendLine("  → Add classpath(\"$DYNATRACE_CLASSPATH\") to buildscript dependencies")
-                                appendLine()
-                            }
-                            projectInfo.appBuildFile?.let {
-                                appendLine("📄 ${it.path}")
-                                appendLine("  → Apply Dynatrace plugin ($DYNATRACE_PLUGIN_ID)")
+                                appendLine("  → Apply Dynatrace plugin ($DYNATRACE_PLUGIN_ID) in this same top-level file")
                                 appendLine("  → Add dynatrace {} configuration block:")
                                 appendLine()
                                 block.lines().forEach { line -> appendLine("    $line") }
@@ -1681,11 +1733,7 @@ buildscript {
                     projectBuildFile?.let {
                         appendLine("📄 ${it.path}")
                         appendLine("  → Add classpath(\"$DYNATRACE_CLASSPATH\") to buildscript dependencies")
-                        appendLine()
-                    }
-                    appBuildFile?.let {
-                        appendLine("📄 ${it.path}")
-                        appendLine("  → Apply Dynatrace plugin ($DYNATRACE_PLUGIN_ID)")
+                        appendLine("  → Apply Dynatrace plugin ($DYNATRACE_PLUGIN_ID) in this same top-level file")
                         appendLine("  → Add dynatrace {} configuration block:")
                         appendLine()
                         block.lines().forEach { appendLine("    $it") }

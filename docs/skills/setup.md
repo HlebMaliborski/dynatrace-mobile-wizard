@@ -234,7 +234,7 @@ buildscript {
 }
 ```
 
-Then in the **app module** `build.gradle(.kts)`:
+Then, in the **same top-level build file** (after the `buildscript {}` block — Gradle requires `buildscript {}` to be evaluated before any other statement, so the apply line must come after it, never before):
 
 ```kotlin
 // Kotlin DSL
@@ -245,6 +245,13 @@ apply(plugin = "com.dynatrace.instrumentation")
 // Groovy
 apply plugin: 'com.dynatrace.instrumentation'
 ```
+
+> ⚠️ The plugin must **not** be applied in the app module's `build.gradle(.kts)`, even with the
+> buildscript classpath approach. Per Dynatrace's documentation: "You should apply the
+> Dynatrace Android Gradle plugin to the top-level build file ... This approach allows the
+> plugin to properly configure the Android subprojects and establish the auto-instrumentation
+> process." The `dynatrace {}` configuration block (Step 3 below) goes in this same top-level
+> file as well.
 
 ---
 
@@ -499,8 +506,8 @@ Dynamic feature modules are instrumented **automatically** — no changes needed
 
 ```
 root/
-  build.gradle.kts          ← plugin declaration (Plugin DSL)
-  app/build.gradle.kts      ← dynatrace { } block + autoStart credentials
+  build.gradle.kts          ← plugin declaration + dynatrace { } block + autoStart credentials
+  app/build.gradle.kts      ← no changes needed
   feature_login/            ← no changes needed
   feature_checkout/         ← no changes needed
 ```

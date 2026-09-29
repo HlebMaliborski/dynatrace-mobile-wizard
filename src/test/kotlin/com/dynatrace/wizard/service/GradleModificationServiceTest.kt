@@ -1,6 +1,7 @@
 package com.dynatrace.wizard.service
 
 import com.dynatrace.wizard.model.DynatraceConfig
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -290,6 +291,75 @@ class GradleModificationServiceTest {
         assertTrue("classpath entry must be present", result.contains("classpath 'com.dynatrace.tools.android:gradle-plugin"))
         assertTrue("repositories block must be present for legacy projects", result.contains("repositories {"))
         assertTrue("mavenCentral must be listed", result.contains("mavenCentral()"))
+    }
+
+    /**
+     * Regression test for: the wizard produced a DUPLICATE `buildscript {}` block when run
+     * against a standard (legacy-template) Android project whose existing `buildscript {}`
+     * declares `repositories {}` BEFORE `dependencies {}` — e.g. the default project.
+     *
+     * Root cause: the old detection regex `buildscript\s*\{[^}]*dependencies\s*\{` cannot
+     * cross the closing `}` of the `repositories {}` sub-block, so it never found the
+     * existing `dependencies {}` and fell back to prepending a brand-new buildscript block
+     * instead of inserting the classpath line into the existing one.
+     */
+    @Test
+    fun `addClasspathGroovy inserts into existing buildscript with repositories declared before dependencies`() {
+        val service = GradleModificationService(null)
+        val input = """
+
+            // Top-level build file where you can add configuration options common to all sub-projects/modules.
+            buildscript {
+                repositories {
+                    google()
+                    mavenCentral()
+                }
+                dependencies {
+                    classpath 'com.android.tools.build:gradle:8.13.0'
+                }
+            }
+
+            task clean(type: Delete) {
+                delete rootProject.buildDir
+            }
+        """.trimIndent()
+
+        val result = service.addClasspathGroovy(input)
+
+        assertTrue("Dynatrace classpath must be inserted", result.contains("classpath 'com.dynatrace.tools.android:gradle-plugin"))
+        assertTrue("original AGP classpath must be preserved", result.contains("classpath 'com.android.tools.build:gradle:8.13.0'"))
+        assertEquals(
+            "only ONE buildscript {} block must exist — the classpath must be merged into it, not duplicated",
+            1,
+            Regex("""buildscript\s*\{""").findAll(result).count()
+        )
+    }
+
+    @Test
+    fun `addClasspathKts inserts into existing buildscript with repositories declared before dependencies`() {
+        val service = GradleModificationService(null)
+        val input = """
+
+            buildscript {
+                repositories {
+                    google()
+                    mavenCentral()
+                }
+                dependencies {
+                    classpath("com.android.tools.build:gradle:8.13.0")
+                }
+            }
+        """.trimIndent()
+
+        val result = service.addClasspathKts(input)
+
+        assertTrue("Dynatrace classpath must be inserted", result.contains("classpath(\"com.dynatrace.tools.android:gradle-plugin"))
+        assertTrue("original AGP classpath must be preserved", result.contains("classpath(\"com.android.tools.build:gradle:8.13.0\")"))
+        assertEquals(
+            "only ONE buildscript {} block must exist — the classpath must be merged into it, not duplicated",
+            1,
+            Regex("""buildscript\s*\{""").findAll(result).count()
+        )
     }
 
     @Test

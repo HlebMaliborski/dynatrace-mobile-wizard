@@ -91,7 +91,7 @@ class WelcomeStep(
                         SetupFlow.MULTI_APP ->
                             "Classpath added to root; com.dynatrace.instrumentation.module applied to each app module."
                         else ->
-                            "Classpath added to root buildscript; apply plugin in the app module."
+                            "Classpath, apply plugin, and dynatrace {} block all added to the root build file."
                     }
                     approachColor = WizardColors.warning
                 }

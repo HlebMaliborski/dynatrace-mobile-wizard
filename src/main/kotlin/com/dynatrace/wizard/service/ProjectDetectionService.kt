@@ -26,12 +26,12 @@ class ProjectDetectionService(private val project: Project) {
         /** One app module — standard Plugin DSL or buildscript path. */
         SINGLE_APP(
             "Single application module",
-            "Plugin applied at project root. dynatrace {} config goes in the root build file (Plugin DSL) or the app module (buildscript path)."
+            "Plugin and dynatrace {} config both go in the root build file, whether using Plugin DSL or the buildscript classpath approach — per Dynatrace's documentation, the plugin must be applied at the project root."
         ),
         /** Base app + one or more dynamic-feature modules. */
         FEATURE_MODULES(
             "Base app + feature modules",
-            "Plugin applied at project root. dynatrace {} config goes in the root build file (Plugin DSL) or the app module (buildscript path). Dynamic feature and library modules require no changes — they are instrumented automatically."
+            "Plugin and dynatrace {} config both go in the root build file, whether using Plugin DSL or the buildscript classpath approach. Dynamic feature and library modules require no changes — they are instrumented automatically."
         ),
         /** More than one com.android.application in the project. */
         MULTI_APP(
