@@ -245,11 +245,13 @@ The wizard scans subdirectory build files for any of the following patterns:
 
 ## Installation
 
-### From JetBrains Marketplace _(coming soon)_
+### From JetBrains Marketplace
+
+[![Dynatrace Wizard on JetBrains Marketplace](https://img.shields.io/badge/JetBrains%20Marketplace-Dynatrace%20Wizard-blue)](https://plugins.jetbrains.com/plugin/32308-dynatrace-mobile-wizard)
 
 1. Open Android Studio / IntelliJ IDEA
 2. Go to **Settings → Plugins → Marketplace**
-3. Search for **Dynatrace Wizard**
+3. Search for **Dynatrace Wizard** (or install directly from the [Marketplace page](https://plugins.jetbrains.com/plugin/32308-dynatrace-mobile-wizard))
 4. Click **Install** and restart the IDE
 
 ### From Source
