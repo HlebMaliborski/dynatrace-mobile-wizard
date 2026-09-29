@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.1] - 2026-09-29
+
+### Fixed
+- **Duplicate `buildscript {}` block** — `addClasspathGroovy`/`addClasspathKts` used a single-line regex (`buildscript\s*\{[^}]*dependencies\s*\{`) that could not cross the closing `}` of a `repositories {}` sub-block declared before `dependencies {}` — the standard Android project template. This caused the wizard to prepend a second, duplicate `buildscript {}` block instead of merging the Dynatrace classpath into the existing one. Replaced with a brace-depth-aware `findBuildscriptDependenciesInsertionPoint` helper.
+- **Buildscript classpath approach applied the plugin to the wrong file** — for single-app and feature-module projects using the legacy buildscript-classpath approach, `apply plugin` and the `dynatrace {}` block were written to the **app module** file. Per Dynatrace's documentation ("apply the Dynatrace Android Gradle plugin to the top-level build file... this allows the plugin to properly configure the Android subprojects"), both now go into the same **root** file as the `classpath` entry. Multi-app per-module setups are unaffected — the `.module` plugin variant still applies per app module there, since that's a genuinely different, still-valid pattern.
+- **Generated AI skill files (`skills.md`) gave the same wrong app-module guidance**, and separately mislabeled multi-app per-module setups when generating the single-app/feature-module case. Both the "Plugin Apply" snippet and the "Instrumentation approach" summary row now correctly distinguish single-app/feature-module (root-only) from multi-app per-module (plugin in each app module).
+- Corrected matching text in `docs/skills/setup.md` (section 2b + the Feature Modules diagram), the Welcome tab's plugin-approach hint, both `generateChangePreview` overloads, `SetupFlow` descriptions, and the README's Setup Flows table — all previously described the old app-module placement.
+
+### Removed
+- Orphaned "shared dynatrace-common file" code path (`createSharedDynatraceFile`, `applyFromSharedFile`, `addPluginDeclarationOnly`) — never wired up from any wizard flow and contradicted the actual (and now corrected) feature-module behavior described in the docs.
+
 ## [1.0.0] - 2026-06-16
 
 ### Added
